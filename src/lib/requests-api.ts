@@ -62,6 +62,7 @@ type DbRequestRow = {
   reference_link: string | null; current_stage: RequestStage;
   assigned_to: string | null; social_poc: string | null; video_poc: string | null;
   upload_poc: string | null; shoot_date: string | null; revisions: number;
+  project_id: string | null;
   created_at: string; updated_at: string;
 };
 type DbTransitionRow = {
@@ -101,6 +102,7 @@ function rowToRequest(
     video_poc: u2ui(toUi, row.video_poc),
     upload_poc: u2ui(toUi, row.upload_poc),
     shoot_date: row.shoot_date ?? undefined,
+    project_id: row.project_id ?? undefined,
     revisions: row.revisions ?? 0,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -125,6 +127,7 @@ function requestToRow(req: Request | Partial<Request>, toDb: Map<string, string>
     video_poc: u2db(toDb, req.video_poc),
     upload_poc: u2db(toDb, req.upload_poc),
     shoot_date: req.shoot_date ?? null,
+    project_id: (req as { project_id?: string }).project_id ?? null,
     revisions: req.revisions ?? 0,
   };
 }

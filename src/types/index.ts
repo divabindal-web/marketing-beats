@@ -43,6 +43,8 @@ export interface Request {
   requested_by: RequestedBy;
   /** Business entity (SQY / INCO / UM / AZURO). */
   entity?: Entity;
+  /** Campaign / project this request belongs to (projects.id uuid). */
+  project_id?: string;
   title: string;
   description?: string;
   requestor_name: string;

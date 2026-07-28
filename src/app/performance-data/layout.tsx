@@ -7,6 +7,7 @@ const pageTitles: Record<string, string> = {
   '/performance-data/orm': 'ORM — Online Reputation',
   '/performance-data/paid': 'Paid Campaigns',
   '/performance-data/social': 'Social — Hootsuite',
+  '/performance-data/upload': 'Upload Data',
 };
 
 export default function PerformanceDataLayout({ children }: { children: React.ReactNode }) {

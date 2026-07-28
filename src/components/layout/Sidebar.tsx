@@ -64,6 +64,21 @@ const navSections: NavSection[] = [
         href: '/design-ops/downloads',
         icon: <FolderDown size={16} strokeWidth={1.75} />,
       },
+      {
+        label: 'Reports — Output & TAT',
+        href: '/design-ops/reports',
+        icon: <Gauge size={16} strokeWidth={1.75} />,
+      },
+    ],
+  },
+  {
+    title: 'Social',
+    items: [
+      {
+        label: 'Calendar',
+        href: '/social/calendar',
+        icon: <Calendar size={16} strokeWidth={1.75} />,
+      },
     ],
   },
     {
@@ -88,6 +103,11 @@ const navSections: NavSection[] = [
         label: 'Social (Hootsuite)',
         href: '/performance-data/social',
         icon: <BarChart3 size={16} strokeWidth={1.75} />,
+      },
+      {
+        label: 'Upload Data',
+        href: '/performance-data/upload',
+        icon: <Upload size={16} strokeWidth={1.75} />,
       },
     ],
   },

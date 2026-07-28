@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { fetchRequests, updateRequest } from '@/lib/requests-api';
 import { List, Columns3, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Request, RequestType } from '@/types';
@@ -25,7 +26,8 @@ import DetailPanel from '@/components/design-ops/DetailPanel';
 type ViewType = 'list' | 'kanban' | 'calendar';
 type SortField = 'need_by' | 'created_at' | null;
 
-export default function AllRequestsPage() {
+function AllRequestsPageInner() {
+  const searchParams = useSearchParams();
   const [requests, setRequests] = useState<Request[]>(SAMPLE_REQUESTS);
   const [currentView, setCurrentView] = useState<ViewType>('list');
 
@@ -35,7 +37,7 @@ export default function AllRequestsPage() {
       .then(setRequests)
       .catch((err) => console.error('Failed to load requests:', err));
   }, []);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') ?? '');
   const [typeFilters, setTypeFilters] = useState<RequestType[]>([]);
   const [stageFilters, setStageFilters] = useState<string[]>([]);
   const [sortField, setSortField] = useState<SortField>('need_by');
@@ -450,5 +452,13 @@ export default function AllRequestsPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function AllRequestsPage() {
+  return (
+    <Suspense fallback={null}>
+      <AllRequestsPageInner />
+    </Suspense>
   );
 }

@@ -7,6 +7,7 @@ const pageTitles: Record<string, string> = {
   '/design-ops/my-tasks': 'My Tasks',
   '/design-ops/requests': 'All Requests',
   '/design-ops/downloads': 'Downloads / Uploads',
+  '/design-ops/reports': 'Team Output & TAT',
 };
 
 export default function DesignOpsLayout({ children }: { children: React.ReactNode }) {
