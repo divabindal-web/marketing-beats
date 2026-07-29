@@ -39,6 +39,8 @@ import RequestModal from '@/components/design-ops/RequestModal';
 import DetailPanel from '@/components/design-ops/DetailPanel';
 import { useRole } from '@/components/layout/RoleContext';
 import { useCurrentUser } from '@/components/layout/CurrentUserContext';
+import { currentDbUser } from '@/lib/work-api';
+import { supabase } from '@/lib/supabase';
 
 /* ------------------------------------------------------------------ */
 /*  Shared helpers                                                     */
@@ -63,6 +65,40 @@ export default function DashboardPage() {
   }, []);
   const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+
+  // Lead scoping: a team lead's manager view shows only their team's work.
+  // Divya (admin) sees everything. The scope set holds both DB uuids and the
+  // matching sample ids so it works whichever id space a request row uses.
+  const [teamScope, setTeamScope] = useState<Set<string> | null>(null);
+  const [teamName, setTeamName] = useState<string | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const me = await currentDbUser();
+        if (!me || !me.is_lead || me.role === 'admin' || !me.team) return;
+        const { data } = await supabase.from('users').select('id, email').eq('team', me.team);
+        const ids = new Set<string>();
+        (data ?? []).forEach((u: { id: string; email: string | null }) => {
+          ids.add(u.id);
+          const s = SAMPLE_USERS.find(
+            (su) => (su.email ?? '').toLowerCase() === (u.email ?? '').toLowerCase(),
+          );
+          if (s) ids.add(s.id);
+        });
+        setTeamScope(ids);
+        setTeamName(me.team);
+      } catch { /* fall back to unscoped */ }
+    })();
+  }, []);
+
+  const managerRequests = useMemo(() => {
+    if (!teamScope) return requests;
+    return requests.filter(
+      (r) =>
+        (r.assigned_to && teamScope.has(r.assigned_to)) ||
+        (r.requestor_id && teamScope.has(r.requestor_id)),
+    );
+  }, [requests, teamScope]);
 
   const handleSaveRequest = (newRequest: Partial<Request>) => {
     const id = 'req-' + Math.random().toString(36).substr(2, 9);
@@ -120,7 +156,9 @@ export default function DashboardPage() {
           <p className="gb-page-description">
             {role === 'individual'
               ? 'Your personal work queue — pending tasks, TAT alerts, and priorities.'
-              : 'Team overview — performance, bottlenecks, and reassignment controls.'}
+              : teamName
+                ? `${teamName} team overview — performance, bottlenecks, and reassignment controls.`
+                : 'Team overview — performance, bottlenecks, and reassignment controls.'}
           </p>
         </div>
         <button onClick={() => setIsModalOpen(true)} className="gb-btn gb-btn-primary">
@@ -137,7 +175,7 @@ export default function DashboardPage() {
           currentUserName={currentUser?.name ?? null}
         />
       ) : (
-        <ManagerDashboard requests={requests} onOpen={handleOpenRequest} onUpdate={handleUpdateRequest} />
+        <ManagerDashboard requests={managerRequests} onOpen={handleOpenRequest} onUpdate={handleUpdateRequest} />
       )}
 
       <RequestModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveRequest} />
