@@ -163,8 +163,10 @@ export async function listDbUsers(): Promise<DbUserRow[]> {
   return (data as DbUserRow[]) ?? [];
 }
 export async function updateDbUser(id: string, patch: Partial<Pick<DbUserRow, 'role' | 'team' | 'is_lead' | 'is_active' | 'designation'>>) {
+  const { data: auth } = await supabase.auth.getSession();
+  if (!auth.session) throw new Error('Your session has expired — please sign in again.');
   const { error } = await supabase.from('users').update(patch).eq('id', id);
-  if (error) throw error;
+  if (error) throw new Error((error as { message?: string }).message ?? 'Update failed');
 }
 export async function deleteDbUser(id: string): Promise<void> {
   const { data, error } = await supabase.from('users').delete().eq('id', id).select('id');
@@ -177,10 +179,18 @@ export async function deleteDbUser(id: string): Promise<void> {
   if (!data || data.length === 0) throw new Error('Delete not permitted.');
 }
 export async function addDbUser(u: { name: string; email: string; team?: string; role?: string; designation?: string }) {
+  // Fail with a clear message if the session has expired (otherwise the insert
+  // is rejected by row-level security and the reason is invisible to the user).
+  const { data: auth } = await supabase.auth.getSession();
+  if (!auth.session) throw new Error('Your session has expired — please sign in again.');
   const { error } = await supabase.from('users').insert({
     employee_code: 'NEW-' + Date.now().toString(36).toUpperCase(),
-    name: u.name, email: u.email, team: u.team ?? null,
+    name: u.name, email: u.email.trim().toLowerCase(), team: u.team ?? null,
     role: u.role ?? 'designer', designation: u.designation ?? null, is_active: true,
   });
-  if (error) throw error;
+  if (error) {
+    const e = error as { code?: string; message?: string };
+    if (e.code === '23505') throw new Error('A member with this email already exists.');
+    throw new Error(e.message ?? 'Could not add member');
+  }
 }
