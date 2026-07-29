@@ -5,7 +5,7 @@ import { X } from 'lucide-react';
 import { Request, RequestType, REQUESTED_BY_OPTIONS, REQUEST_TYPES, StageTransition, ENTITIES, Entity } from '@/types';
 import { getStagesForType } from '@/lib/sample-data';
 import { supabase } from '@/lib/supabase';
-import { listProjects, addProject, currentDbUser, ProjectRow } from '@/lib/work-api';
+import { currentDbUser } from '@/lib/work-api';
 import { useCurrentUser } from '@/components/layout/CurrentUserContext';
 
 interface LeadOption {
@@ -26,12 +26,6 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
   const [assignLabel, setAssignLabel] = useState('Assign to lead');
   const [showAssign, setShowAssign] = useState(true);
   const [assignLead, setAssignLead] = useState('');
-  const [projects, setProjects] = useState<ProjectRow[]>([]);
-  const [selectedProject, setSelectedProject] = useState('');
-  const [showNewProject, setShowNewProject] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectEntity, setNewProjectEntity] = useState<Entity>('SQY');
-  const [addingProject, setAddingProject] = useState(false);
 
   // Role-aware assignee list from the live DB:
   //  - Divya (admin) assigns to the team leads
@@ -71,27 +65,7 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
         console.error('Failed to load assignees:', err);
       }
     })();
-    listProjects()
-      .then(setProjects)
-      .catch((err) => console.error('Failed to load campaigns:', err));
   }, [isOpen]);
-
-  const handleAddProject = async () => {
-    const name = newProjectName.trim();
-    if (!name || addingProject) return;
-    setAddingProject(true);
-    try {
-      const created = await addProject(name, newProjectEntity);
-      setProjects((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
-      setSelectedProject(created.id);
-      setShowNewProject(false);
-      setNewProjectName('');
-    } catch (err) {
-      alert('Could not add campaign: ' + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setAddingProject(false);
-    }
-  };
 
   const [formData, setFormData] = useState({
     type: 'Graphics' as RequestType,
@@ -168,7 +142,6 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
       need_by: formData.needBy,
       reference_link: formData.referenceLink || undefined,
       current_stage: firstStage,
-      project_id: selectedProject || undefined,
       revisions: 0,
       created_at: nowIso,
       updated_at: nowIso,
@@ -188,9 +161,6 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
       referenceLink: '',
     });
     setAssignLead('');
-    setSelectedProject('');
-    setShowNewProject(false);
-    setNewProjectName('');
     setErrors({});
     onClose();
   };
@@ -286,67 +256,6 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
                 </select>
               </div>
             )}
-
-            {/* Campaign / Project */}
-            <div>
-              <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
-                Campaign / Project
-              </label>
-              <select
-                value={showNewProject ? '__new__' : selectedProject}
-                onChange={(e) => {
-                  if (e.target.value === '__new__') {
-                    setShowNewProject(true);
-                  } else {
-                    setShowNewProject(false);
-                    setSelectedProject(e.target.value);
-                  }
-                }}
-                className="w-full input-base"
-              >
-                <option value="">— none —</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}{p.entity ? ` (${p.entity})` : ''}
-                  </option>
-                ))}
-                <option value="__new__">+ New campaign…</option>
-              </select>
-              {showNewProject && (
-                <div className="flex gap-2 mt-2">
-                  <input
-                    type="text"
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    placeholder="Campaign name"
-                    className="flex-1 input-base"
-                  />
-                  <select
-                    value={newProjectEntity}
-                    onChange={(e) => setNewProjectEntity(e.target.value as Entity)}
-                    className="input-base"
-                  >
-                    {ENTITIES.map((en) => (
-                      <option key={en} value={en}>
-                        {en}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={handleAddProject}
-                    disabled={!newProjectName.trim() || addingProject}
-                    className={`px-3 py-2 rounded-md text-white text-sm font-medium transition-colors ${
-                      !newProjectName.trim() || addingProject
-                        ? 'bg-[var(--accent)] opacity-50 cursor-not-allowed'
-                        : 'bg-[var(--accent)] hover:opacity-90'
-                    }`}
-                  >
-                    {addingProject ? 'Adding…' : 'Add'}
-                  </button>
-                </div>
-              )}
-            </div>
 
             {/* Requested By */}
             <div>
