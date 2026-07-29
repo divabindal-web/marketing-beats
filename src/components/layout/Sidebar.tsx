@@ -145,7 +145,8 @@ export default function Sidebar() {
         if (!active) return;
         const ok = !!data && (data.is_lead === true || data.role === 'admin');
         setCanManage(ok);
-        if (!ok) setRole('individual');
+        // Leads & Divya land on the team (manager) view; members are always individual
+        setRole(ok ? 'manager' : 'individual');
       });
     return () => { active = false; };
   }, [email, setRole]);
