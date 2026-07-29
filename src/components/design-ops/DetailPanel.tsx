@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { X, CheckCircle, Circle, ChevronRight, ExternalLink, Link2 } from 'lucide-react';
+import { X, CheckCircle, Circle, ChevronRight, ExternalLink, Link2, Trash2 } from 'lucide-react';
 import { Request, User, StageTransition, getTATCategoriesForType } from '@/types';
 import { getStagesForType, isOverdue } from '@/lib/sample-data';
 import { getStageBreakdown, formatBusinessHours } from '@/lib/tat';
@@ -18,6 +18,8 @@ import {
   listAttachments,
   uploadAttachment,
   deleteAttachment,
+  currentDbUser,
+  deleteRequestById,
 } from '@/lib/work-api';
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
@@ -38,9 +40,11 @@ interface DetailPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (updated: Request) => void;
+  /** Called after the request is deleted from the DB so the parent list can drop it. */
+  onDelete?: (id: string) => void;
 }
 
-export default function DetailPanel({ request, users, isOpen, onClose, onUpdate }: DetailPanelProps) {
+export default function DetailPanel({ request, users, isOpen, onClose, onUpdate, onDelete }: DetailPanelProps) {
   const [uploadLinks, setUploadLinks] = useState({
     youtube_link: request.youtube_link || '',
     instagram_link: request.instagram_link || '',
@@ -63,6 +67,38 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate 
   const [attachmentError, setAttachmentError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Delete request — visible to leads/admins only (RLS enforces this server-side too)
+  const [canDelete, setCanDelete] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    currentDbUser()
+      .then((me) => {
+        if (!cancelled) setCanDelete(!!me && (me.is_lead || me.role === 'admin'));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleDeleteRequest = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await deleteRequestById(request.id);
+      onDelete?.(request.id);
+      onClose();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Could not delete this request.');
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
+
   useEffect(() => {
     setSubtasks([]);
     setComments([]);
@@ -72,6 +108,8 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate 
     setSubtaskError('');
     setCommentError('');
     setAttachmentError('');
+    setConfirmDelete(false);
+    setDeleteError('');
     if (!UUID_RE.test(request.id)) return;
     let cancelled = false;
     listSubtasks(request.id)
@@ -263,14 +301,50 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate 
               {request.title}
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="gb-icon-btn flex-shrink-0 ml-2"
-            title="Close"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+            {canDelete && isDbRequest && (
+              confirmDelete ? (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleDeleteRequest}
+                    disabled={deleting}
+                    className="gb-btn"
+                    style={{ padding: '4px 10px', fontSize: '12px', backgroundColor: 'var(--error)', color: '#fff' }}
+                  >
+                    {deleting ? 'Deleting…' : 'Delete task?'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(false)}
+                    className="gb-btn gb-btn-secondary"
+                    style={{ padding: '4px 10px', fontSize: '12px' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="gb-icon-btn"
+                  title="Delete this task"
+                >
+                  <Trash2 size={15} strokeWidth={1.75} style={{ color: 'var(--error)' }} />
+                </button>
+              )
+            )}
+            <button
+              onClick={onClose}
+              className="gb-icon-btn"
+              title="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
+        {deleteError && (
+          <div className="px-5 py-2 text-[12px]" style={{ color: 'var(--error)', borderBottom: '1px solid var(--border)' }}>
+            {deleteError}
+          </div>
+        )}
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">

@@ -5,7 +5,7 @@ import { X } from 'lucide-react';
 import { Request, RequestType, REQUESTED_BY_OPTIONS, REQUEST_TYPES, StageTransition, ENTITIES, Entity } from '@/types';
 import { getStagesForType } from '@/lib/sample-data';
 import { supabase } from '@/lib/supabase';
-import { listProjects, addProject, ProjectRow } from '@/lib/work-api';
+import { listProjects, addProject, currentDbUser, ProjectRow } from '@/lib/work-api';
 import { useCurrentUser } from '@/components/layout/CurrentUserContext';
 
 interface LeadOption {
@@ -23,6 +23,7 @@ interface RequestModalProps {
 export default function RequestModal({ isOpen, onClose, onSave }: RequestModalProps) {
   const { currentUser, email } = useCurrentUser();
   const [leads, setLeads] = useState<LeadOption[]>([]);
+  const [assignLabel, setAssignLabel] = useState('Assign to lead');
   const [assignLead, setAssignLead] = useState('');
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [selectedProject, setSelectedProject] = useState('');
@@ -31,16 +32,38 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
   const [newProjectEntity, setNewProjectEntity] = useState<Entity>('SQY');
   const [addingProject, setAddingProject] = useState(false);
 
-  // Load team leads from the live DB (extensible: mark anyone is_lead=true and they appear here)
+  // Role-aware assignee list from the live DB:
+  //  - Divya (admin) assigns to the team leads
+  //  - a lead assigns to the members of their own team
+  //  - anyone else falls back to the leads list
   useEffect(() => {
     if (!isOpen) return;
-    supabase
-      .from('users')
-      .select('id, name, team')
-      .eq('is_lead', true)
-      .eq('is_active', true)
-      .order('name')
-      .then(({ data }) => setLeads((data as LeadOption[]) ?? []));
+    (async () => {
+      try {
+        const me = await currentDbUser();
+        if (me && me.is_lead && me.role !== 'admin' && me.team) {
+          const { data } = await supabase
+            .from('users')
+            .select('id, name, team')
+            .eq('team', me.team)
+            .eq('is_active', true)
+            .order('name');
+          setAssignLabel('Assign to team member');
+          setLeads((data as LeadOption[]) ?? []);
+        } else {
+          const { data } = await supabase
+            .from('users')
+            .select('id, name, team')
+            .eq('is_lead', true)
+            .eq('is_active', true)
+            .order('name');
+          setAssignLabel('Assign to lead');
+          setLeads((data as LeadOption[]) ?? []);
+        }
+      } catch (err) {
+        console.error('Failed to load assignees:', err);
+      }
+    })();
     listProjects()
       .then(setProjects)
       .catch((err) => console.error('Failed to load campaigns:', err));
@@ -236,10 +259,10 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
               </select>
             </div>
 
-            {/* Assign to team lead (leaders then re-assign to their team) */}
+            {/* Assign to lead (admin) or team member (lead) */}
             <div>
               <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
-                Assign to lead
+                {assignLabel}
               </label>
               <select
                 value={assignLead}

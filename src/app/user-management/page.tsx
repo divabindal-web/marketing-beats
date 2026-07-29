@@ -1,10 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { DbUserRow, addDbUser, listDbUsers, updateDbUser } from '@/lib/work-api';
-import { Search, UserPlus, X } from 'lucide-react';
-
-const ROLES = ['admin', 'manager', 'designer', 'viewer'] as const;
+import { DbUserRow, TEAMS, addDbUser, deleteDbUser, listDbUsers, updateDbUser } from '@/lib/work-api';
+import { Search, Trash2, UserPlus, X } from 'lucide-react';
 
 type EditablePatch = Partial<Pick<DbUserRow, 'role' | 'team' | 'is_lead' | 'is_active' | 'designation'>>;
 
@@ -15,19 +13,6 @@ function getInitials(name: string) {
     .join('')
     .toUpperCase()
     .slice(0, 2);
-}
-
-function roleBadgeClass(role: string) {
-  switch (role) {
-    case 'admin':
-      return 'gb-badge gb-badge-red';
-    case 'manager':
-      return 'gb-badge gb-badge-blue';
-    case 'designer':
-      return 'gb-badge gb-badge-green';
-    default:
-      return 'gb-badge gb-badge-gray';
-  }
 }
 
 /* ---------------- Add member modal (RequestModal overlay pattern) ---------------- */
@@ -127,22 +112,11 @@ function AddMemberModal({ isOpen, onClose, onAdded }: AddMemberModalProps) {
 
             <div>
               <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">Team</label>
-              <input
-                type="text"
-                name="team"
-                value={form.team}
-                onChange={handleChange}
-                placeholder="e.g., Graphics"
-                className="w-full input-base"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">Role</label>
-              <select name="role" value={form.role} onChange={handleChange} className="w-full input-base">
-                {ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {role.charAt(0).toUpperCase() + role.slice(1)}
+              <select name="team" value={form.team} onChange={handleChange} className="w-full input-base">
+                <option value="">— choose team —</option>
+                {TEAMS.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
                   </option>
                 ))}
               </select>
@@ -196,6 +170,8 @@ export default function UserManagementPage() {
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -245,6 +221,29 @@ export default function UserManagementPage() {
     }
   };
 
+  /** Two-step delete: first click arms the row, second click removes the person. */
+  const removeUser = async (id: string) => {
+    if (deleting) return;
+    setDeleting(true);
+    setRowErrors((cur) => {
+      const next = { ...cur };
+      delete next[id];
+      return next;
+    });
+    try {
+      await deleteDbUser(id);
+      setUsers((cur) => cur.filter((u) => u.id !== id));
+    } catch (e) {
+      setRowErrors((cur) => ({
+        ...cur,
+        [id]: e instanceof Error ? e.message : 'Could not delete this member',
+      }));
+    } finally {
+      setDeleting(false);
+      setPendingDelete(null);
+    }
+  };
+
   return (
     <div style={{ padding: '28px 32px' }}>
       {/* Page Header */}
@@ -252,7 +251,7 @@ export default function UserManagementPage() {
         <div>
           <h1 className="gb-page-title">User Management</h1>
           <p className="gb-page-description">
-            Manage permissions, roles, and access for the marketing team. Changes save to the live database.
+            Manage teams, leads, and access for the marketing team. Changes save to the live database.
           </p>
         </div>
         <button className="gb-btn gb-btn-primary" onClick={() => setIsAddOpen(true)}>
@@ -300,9 +299,9 @@ export default function UserManagementPage() {
               <th>Email</th>
               <th>Designation</th>
               <th>Team</th>
-              <th>Role</th>
               <th>Lead?</th>
               <th>Active</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -343,7 +342,8 @@ export default function UserManagementPage() {
                       </div>
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>
-                          {user.name} <span className={roleBadgeClass(user.role)}>{user.role}</span>
+                          {user.name}{' '}
+                          {user.role === 'admin' && <span className="gb-badge gb-badge-red">admin</span>}
                         </div>
                         {rowErrors[user.id] && (
                           <div style={{ fontSize: '11.5px', color: 'var(--error)', marginTop: '2px' }}>
@@ -360,37 +360,19 @@ export default function UserManagementPage() {
                     <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{user.designation ?? '—'}</span>
                   </td>
                   <td>
-                    {/* Uncontrolled + keyed so an error revert resets the field; saves on blur. */}
-                    <input
-                      key={`team-${user.id}-${user.team ?? ''}`}
-                      type="text"
-                      defaultValue={user.team ?? ''}
-                      placeholder="—"
-                      className="input-base"
-                      style={{ width: '140px', padding: '5px 8px', fontSize: '13px' }}
-                      onBlur={(e) => {
-                        const next = e.target.value.trim();
-                        if (next !== (user.team ?? '')) {
-                          void patchUser(user.id, { team: next || null });
-                        }
-                      }}
-                    />
-                  </td>
-                  <td>
                     <select
-                      value={user.role}
+                      value={user.team ?? ''}
                       className="input-base"
-                      style={{ width: '120px', padding: '5px 8px', fontSize: '13px' }}
-                      onChange={(e) => void patchUser(user.id, { role: e.target.value })}
+                      style={{ width: '150px', padding: '5px 8px', fontSize: '13px' }}
+                      onChange={(e) => void patchUser(user.id, { team: e.target.value || null })}
                     >
-                      {ROLES.map((role) => (
-                        <option key={role} value={role}>
-                          {role}
+                      <option value="">—</option>
+                      {TEAMS.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
                         </option>
                       ))}
-                      {!ROLES.includes(user.role as (typeof ROLES)[number]) && (
-                        <option value={user.role}>{user.role}</option>
-                      )}
+                      {user.team && !TEAMS.includes(user.team) && <option value={user.team}>{user.team}</option>}
                     </select>
                   </td>
                   <td>
@@ -408,6 +390,35 @@ export default function UserManagementPage() {
                       style={{ width: '16px', height: '16px', accentColor: 'var(--success)', cursor: 'pointer' }}
                       onChange={(e) => void patchUser(user.id, { is_active: e.target.checked })}
                     />
+                  </td>
+                  <td>
+                    {pendingDelete === user.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          className="gb-btn"
+                          style={{ padding: '4px 10px', fontSize: '12px', backgroundColor: 'var(--error)', color: '#fff' }}
+                          disabled={deleting}
+                          onClick={() => void removeUser(user.id)}
+                        >
+                          {deleting ? 'Removing…' : 'Confirm'}
+                        </button>
+                        <button
+                          className="gb-btn gb-btn-secondary"
+                          style={{ padding: '4px 10px', fontSize: '12px' }}
+                          onClick={() => setPendingDelete(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className="gb-icon-btn"
+                        title={`Remove ${user.name}`}
+                        onClick={() => setPendingDelete(user.id)}
+                      >
+                        <Trash2 size={14} strokeWidth={1.75} style={{ color: 'var(--error)' }} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))

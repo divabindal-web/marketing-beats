@@ -12,15 +12,16 @@ export interface NotificationRow { id: string; type: string; message: string; re
 export interface ProjectRow { id: string; name: string; entity: string | null; status: string; }
 
 /* -------- current DB user (by auth email) -------- */
-let dbUserPromise: Promise<{ id: string; name: string } | null> | null = null;
-export async function currentDbUser() {
+export interface MeRow { id: string; name: string; role: string; team: string | null; is_lead: boolean; }
+let dbUserPromise: Promise<MeRow | null> | null = null;
+export async function currentDbUser(): Promise<MeRow | null> {
   if (!dbUserPromise) {
     dbUserPromise = (async () => {
       const { data: auth } = await supabase.auth.getUser();
       const email = auth.user?.email;
       if (!email) return null;
-      const { data } = await supabase.from('users').select('id, name').ilike('email', email).maybeSingle();
-      return (data as { id: string; name: string } | null) ?? null;
+      const { data } = await supabase.from('users').select('id, name, role, team, is_lead').ilike('email', email).maybeSingle();
+      return (data as MeRow | null) ?? null;
     })();
   }
   return dbUserPromise;
@@ -129,7 +130,18 @@ export async function addProject(name: string, entity: string | null): Promise<P
   return data as ProjectRow;
 }
 
+/* -------- requests: delete (leads/admins only — enforced by RLS) -------- */
+export async function deleteRequestById(id: string): Promise<void> {
+  const { data, error } = await supabase.from('requests').delete().eq('id', id).select('id');
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error('Not permitted — only team leads and admins can delete requests.');
+  }
+}
+
 /* -------- team (DB users for pickers) -------- */
+/** Team options for pickers. Extend this list as new teams come on board. */
+export const TEAMS = ['Content', 'Graphics & Video', 'SEO', 'Paid', 'Social'];
 export interface DbUserRow { id: string; name: string; email: string | null; role: string; team: string | null; is_lead: boolean; is_active: boolean; designation: string | null; }
 export async function listDbUsers(): Promise<DbUserRow[]> {
   const { data, error } = await supabase
@@ -140,6 +152,16 @@ export async function listDbUsers(): Promise<DbUserRow[]> {
 export async function updateDbUser(id: string, patch: Partial<Pick<DbUserRow, 'role' | 'team' | 'is_lead' | 'is_active' | 'designation'>>) {
   const { error } = await supabase.from('users').update(patch).eq('id', id);
   if (error) throw error;
+}
+export async function deleteDbUser(id: string): Promise<void> {
+  const { data, error } = await supabase.from('users').delete().eq('id', id).select('id');
+  if (error) {
+    if ((error as { code?: string }).code === '23503') {
+      throw new Error('This person has task history and can’t be deleted. Untick Active to deactivate them instead.');
+    }
+    throw error;
+  }
+  if (!data || data.length === 0) throw new Error('Delete not permitted.');
 }
 export async function addDbUser(u: { name: string; email: string; team?: string; role?: string; designation?: string }) {
   const { error } = await supabase.from('users').insert({

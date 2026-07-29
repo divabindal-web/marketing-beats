@@ -63,6 +63,12 @@ function AllRequestsPageInner() {
     setSelectedRequest(null);
   };
 
+  const handleDeleteRequest = (id: string) => {
+    setRequests((prev) => prev.filter((r) => r.id !== id));
+    setSelectedRequest(null);
+    setIsPanelOpen(false);
+  };
+
   // Filter and sort requests
   const filteredRequests = useMemo(() => {
     let filtered = requests.filter(req => {
@@ -449,6 +455,7 @@ function AllRequestsPageInner() {
           isOpen={isPanelOpen}
           onClose={handleClosePanel}
           onUpdate={handleUpdateRequest}
+          onDelete={handleDeleteRequest}
         />
       )}
     </div>

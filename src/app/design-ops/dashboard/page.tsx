@@ -148,6 +148,7 @@ export default function DashboardPage() {
           isOpen={isPanelOpen}
           onClose={() => { setIsPanelOpen(false); setSelectedRequest(null); }}
           onUpdate={handleUpdateRequest}
+          onDelete={(id) => { setRequests((prev) => prev.filter((r) => r.id !== id)); setSelectedRequest(null); setIsPanelOpen(false); }}
         />
       )}
     </div>
