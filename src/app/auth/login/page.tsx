@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { Sun, Moon, Loader2, Eye, EyeOff } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { supabase, REMEMBER_KEY } from '@/lib/supabase';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -33,6 +34,8 @@ export default function LoginPage() {
     }
     setError('');
     setLoading(true);
+    // Record the choice BEFORE signing in so the auth token lands in the right storage
+    window.localStorage.setItem(REMEMBER_KEY, keepSignedIn ? 'yes' : 'no');
     try {
       const { error: authError } = await supabase.auth.signInWithPassword({
         email,
@@ -168,6 +171,21 @@ export default function LoginPage() {
               </button>
             </div>
           </div>
+
+          {/* Keep me signed in */}
+          <label
+            className="flex items-center gap-2 mb-5 cursor-pointer select-none"
+            style={{ fontSize: '13px', color: 'var(--text-secondary)' }}
+          >
+            <input
+              type="checkbox"
+              checked={keepSignedIn}
+              onChange={(e) => setKeepSignedIn(e.target.checked)}
+              style={{ width: '15px', height: '15px', accentColor: 'var(--accent)', cursor: 'pointer' }}
+              disabled={loading}
+            />
+            Keep this device logged in
+          </label>
 
           {/* Sign in button */}
           <button
