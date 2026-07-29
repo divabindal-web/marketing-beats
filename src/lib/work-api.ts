@@ -13,14 +13,27 @@ export interface ProjectRow { id: string; name: string; entity: string | null; s
 
 /* -------- current DB user (by auth email) -------- */
 export interface MeRow { id: string; name: string; role: string; team: string | null; is_lead: boolean; }
+// Cache keyed by the CURRENT auth email — never caches "no user", and refreshes
+// automatically when someone signs out and back in as a different account
+// (client-side navigation doesn't reload the page, so a naive cache goes stale).
+let cachedEmail: string | null = null;
 let dbUserPromise: Promise<MeRow | null> | null = null;
 export async function currentDbUser(): Promise<MeRow | null> {
-  if (!dbUserPromise) {
+  const { data: auth } = await supabase.auth.getUser();
+  const email = auth.user?.email?.toLowerCase() ?? null;
+  if (!email) {
+    cachedEmail = null;
+    dbUserPromise = null;
+    return null;
+  }
+  if (!dbUserPromise || cachedEmail !== email) {
+    cachedEmail = email;
     dbUserPromise = (async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const email = auth.user?.email;
-      if (!email) return null;
-      const { data } = await supabase.from('users').select('id, name, role, team, is_lead').ilike('email', email).maybeSingle();
+      const { data } = await supabase
+        .from('users')
+        .select('id, name, role, team, is_lead')
+        .ilike('email', email)
+        .maybeSingle();
       return (data as MeRow | null) ?? null;
     })();
   }
