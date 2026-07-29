@@ -21,7 +21,7 @@ import {
   Star,
   Megaphone,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useRole } from './RoleContext';
@@ -126,10 +126,29 @@ const navSections: NavSection[] = [
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { role, toggleRole } = useRole();
+  const { role, toggleRole, setRole } = useRole();
   const { currentUser, email } = useCurrentUser();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showChangePwd, setShowChangePwd] = useState(false);
+  const [canManage, setCanManage] = useState(false);
+
+  // Manager view is for leaders/admins only (users.is_lead or role=admin in the DB)
+  useEffect(() => {
+    if (!email) return;
+    let active = true;
+    supabase
+      .from('users')
+      .select('is_lead, role')
+      .ilike('email', email)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!active) return;
+        const ok = !!data && (data.is_lead === true || data.role === 'admin');
+        setCanManage(ok);
+        if (!ok) setRole('individual');
+      });
+    return () => { active = false; };
+  }, [email, setRole]);
 
   const displayName = currentUser?.name ?? (email ? email.split('@')[0] : 'Loading…');
   const displayDesignation = currentUser?.designation ?? (email ?? '');
@@ -170,7 +189,8 @@ export default function Sidebar() {
         </Link>
       </div>
 
-      {/* Workspace switcher / role pill */}
+      {/* Workspace switcher / role pill — leaders & admins only */}
+      {canManage && (
       <div className="px-4 mb-3">
         <button
           onClick={toggleRole}
@@ -199,6 +219,7 @@ export default function Sidebar() {
           </div>
         </button>
       </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">

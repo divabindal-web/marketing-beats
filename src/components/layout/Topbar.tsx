@@ -1,13 +1,10 @@
 'use client';
-import { Search, Sun, Moon, Plus, ChevronRight, Bell } from 'lucide-react';
+import { Search, Sun, Moon, ChevronRight, Bell } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import RequestModal from '@/components/design-ops/RequestModal';
-import { createRequest } from '@/lib/requests-api';
 import { myNotifications, unreadCount, markAllRead, NotificationRow } from '@/lib/work-api';
-import { Request } from '@/types';
 
 interface TopbarProps {
   title: string;
@@ -32,8 +29,6 @@ const breadcrumbMap: Record<string, { section: string; sectionHref: string; labe
 export default function Topbar({ title, onNewRequest }: TopbarProps) {
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
-  const router = useRouter();
-  const [showGlobalModal, setShowGlobalModal] = useState(false);
   const [showBell, setShowBell] = useState(false);
   const [unread, setUnread] = useState(0);
   const [notes, setNotes] = useState<NotificationRow[]>([]);
@@ -57,42 +52,6 @@ export default function Topbar({ title, onNewRequest }: TopbarProps) {
     }
   };
 
-  const handleGlobalSave = (newRequest: Partial<Request>) => {
-    const id = 'req-' + Math.random().toString(36).slice(2, 11);
-    const nowIso = new Date().toISOString();
-    const firstStage = newRequest.current_stage || 'Assigned';
-    const full: Request = {
-      id,
-      type: newRequest.type || 'Graphics',
-      requested_by: newRequest.requested_by || 'Social Team',
-      entity: newRequest.entity,
-      assigned_to: newRequest.assigned_to,
-      project_id: newRequest.project_id,
-      title: newRequest.title || '',
-      description: newRequest.description,
-      requestor_name: newRequest.requestor_name || '',
-      requestor_id: newRequest.requestor_id,
-      need_by: newRequest.need_by || '',
-      reference_link: newRequest.reference_link,
-      current_stage: firstStage,
-      revisions: 0,
-      created_at: nowIso,
-      updated_at: nowIso,
-      transitions: newRequest.transitions ?? [],
-    };
-    createRequest(full)
-      .then(() => {
-        setShowGlobalModal(false);
-        if (pathname === '/design-ops/requests') {
-          window.location.reload();
-        } else {
-          router.push('/design-ops/requests');
-        }
-      })
-      .catch((err) => {
-        alert('Could not save the request: ' + (err?.message ?? String(err)));
-      });
-  };
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -184,23 +143,7 @@ export default function Topbar({ title, onNewRequest }: TopbarProps) {
           )}
         </div>
 
-        {/* New Request — works from every page: opens the form and saves to the DB */}
-        <button
-          onClick={() => (onNewRequest ? onNewRequest() : setShowGlobalModal(true))}
-          className="gb-btn gb-btn-primary"
-        >
-          <Plus size={14} strokeWidth={2.25} />
-          <span>New Request</span>
-        </button>
       </div>
-
-      {showGlobalModal && (
-        <RequestModal
-          isOpen={showGlobalModal}
-          onClose={() => setShowGlobalModal(false)}
-          onSave={handleGlobalSave}
-        />
-      )}
     </header>
   );
 }

@@ -123,7 +123,10 @@ export default function DashboardPage() {
               : 'Team overview — performance, bottlenecks, and reassignment controls.'}
           </p>
         </div>
-        {/* page-level New Request removed — the global top-bar button covers creation */}
+        <button onClick={() => setIsModalOpen(true)} className="gb-btn gb-btn-primary">
+          <Plus size={14} strokeWidth={2.25} />
+          New Request
+        </button>
       </div>
 
       {role === 'individual' ? (
