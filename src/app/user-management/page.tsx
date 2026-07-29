@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { DbUserRow, TEAMS, addDbUser, deleteDbUser, listDbUsers, updateDbUser } from '@/lib/work-api';
+import { DbUserRow, TEAMS, addDbUser, currentDbUser, deleteDbUser, listDbUsers, updateDbUser } from '@/lib/work-api';
 import { Search, Trash2, UserPlus, X } from 'lucide-react';
 
 type EditablePatch = Partial<Pick<DbUserRow, 'role' | 'team' | 'is_lead' | 'is_active' | 'designation'>>;
@@ -21,9 +21,11 @@ interface AddMemberModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdded: () => Promise<void>;
+  /** When set (a lead is adding), the new member joins this team — not editable. */
+  lockTeam?: string | null;
 }
 
-function AddMemberModal({ isOpen, onClose, onAdded }: AddMemberModalProps) {
+function AddMemberModal({ isOpen, onClose, onAdded, lockTeam }: AddMemberModalProps) {
   const [form, setForm] = useState({ name: '', email: '', team: '', role: 'designer', designation: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +48,7 @@ function AddMemberModal({ isOpen, onClose, onAdded }: AddMemberModalProps) {
       await addDbUser({
         name: form.name.trim(),
         email: form.email.trim(),
-        team: form.team.trim() || undefined,
+        team: lockTeam ?? (form.team.trim() || undefined),
         role: form.role,
         designation: form.designation.trim() || undefined,
       });
@@ -112,14 +114,23 @@ function AddMemberModal({ isOpen, onClose, onAdded }: AddMemberModalProps) {
 
             <div>
               <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">Team</label>
-              <select name="team" value={form.team} onChange={handleChange} className="w-full input-base">
-                <option value="">— choose team —</option>
-                {TEAMS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+              {lockTeam ? (
+                <>
+                  <input type="text" value={lockTeam} disabled className="w-full input-base" />
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-faint)' }}>
+                    New members you add join your team.
+                  </p>
+                </>
+              ) : (
+                <select name="team" value={form.team} onChange={handleChange} className="w-full input-base">
+                  <option value="">— choose team —</option>
+                  {TEAMS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>
@@ -172,6 +183,16 @@ export default function UserManagementPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // A lead (non-admin) adds members into their own team
+  const [myTeamLock, setMyTeamLock] = useState<string | null>(null);
+
+  useEffect(() => {
+    currentDbUser()
+      .then((me) => {
+        if (me && me.is_lead && me.role !== 'admin' && me.team) setMyTeamLock(me.team);
+      })
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -428,7 +449,7 @@ export default function UserManagementPage() {
       </div>
 
       {/* Add Member Modal */}
-      <AddMemberModal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} onAdded={load} />
+      <AddMemberModal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} onAdded={load} lockTeam={myTeamLock} />
     </div>
   );
 }
