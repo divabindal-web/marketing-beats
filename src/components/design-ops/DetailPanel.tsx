@@ -67,8 +67,10 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
   const [attachmentError, setAttachmentError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Delete request — visible to leads/admins only (RLS enforces this server-side too)
+  // Leads/admins: can delete requests and reassign people. Members: read-only on
+  // assignment (their lead assigns work to them), no delete.
   const [canDelete, setCanDelete] = useState(false);
+  const canAssign = canDelete;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -526,6 +528,11 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
             <h3 className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-faint)' }}>
               Assignment
             </h3>
+            {!canAssign && (
+              <p className="text-[11px] mb-2" style={{ color: 'var(--text-faint)' }}>
+                Assignment is managed by your team lead.
+              </p>
+            )}
             <div className="space-y-2.5">
               <div>
                 <label className="text-[11px] font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
@@ -535,6 +542,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                   value={request.assigned_to || ''}
                   onChange={(e) => handleFieldChange('assigned_to', e.target.value)}
                   className="w-full input-base text-sm"
+                  disabled={!canAssign}
                 >
                   <option value="">-- Select --</option>
                   {users.map((u) => (
@@ -551,6 +559,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                   value={request.social_poc || ''}
                   onChange={(e) => handleFieldChange('social_poc', e.target.value)}
                   className="w-full input-base text-sm"
+                  disabled={!canAssign}
                 >
                   <option value="">-- Select --</option>
                   {users.map((u) => (
@@ -568,6 +577,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                     value={request.video_poc || ''}
                     onChange={(e) => handleFieldChange('video_poc', e.target.value)}
                     className="w-full input-base text-sm"
+                    disabled={!canAssign}
                   >
                     <option value="">-- Select --</option>
                     {users.map((u) => (
@@ -585,6 +595,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                   value={request.upload_poc || ''}
                   onChange={(e) => handleFieldChange('upload_poc', e.target.value)}
                   className="w-full input-base text-sm"
+                  disabled={!canAssign}
                 >
                   <option value="">-- Select --</option>
                   {users.map((u) => (

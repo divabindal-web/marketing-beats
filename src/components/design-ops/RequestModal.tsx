@@ -24,6 +24,7 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
   const { currentUser, email } = useCurrentUser();
   const [leads, setLeads] = useState<LeadOption[]>([]);
   const [assignLabel, setAssignLabel] = useState('Assign to lead');
+  const [showAssign, setShowAssign] = useState(true);
   const [assignLead, setAssignLead] = useState('');
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [selectedProject, setSelectedProject] = useState('');
@@ -35,19 +36,24 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
   // Role-aware assignee list from the live DB:
   //  - Divya (admin) assigns to the team leads
   //  - a lead assigns to the members of their own team
-  //  - anyone else falls back to the leads list
+  //  - team members don't assign at all — their lead routes the work
   useEffect(() => {
     if (!isOpen) return;
     (async () => {
       try {
         const me = await currentDbUser();
-        if (me && me.is_lead && me.role !== 'admin' && me.team) {
+        if (me && me.role !== 'admin' && !me.is_lead) {
+          // Plain team member: no assign control
+          setShowAssign(false);
+          setLeads([]);
+        } else if (me && me.is_lead && me.role !== 'admin' && me.team) {
           const { data } = await supabase
             .from('users')
             .select('id, name, team')
             .eq('team', me.team)
             .eq('is_active', true)
             .order('name');
+          setShowAssign(true);
           setAssignLabel('Assign to team member');
           setLeads((data as LeadOption[]) ?? []);
         } else {
@@ -57,6 +63,7 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
             .eq('is_lead', true)
             .eq('is_active', true)
             .order('name');
+          setShowAssign(true);
           setAssignLabel('Assign to lead');
           setLeads((data as LeadOption[]) ?? []);
         }
@@ -259,24 +266,26 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
               </select>
             </div>
 
-            {/* Assign to lead (admin) or team member (lead) */}
-            <div>
-              <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
-                {assignLabel}
-              </label>
-              <select
-                value={assignLead}
-                onChange={(e) => setAssignLead(e.target.value)}
-                className="w-full input-base"
-              >
-                <option value="">— choose later —</option>
-                {leads.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}{l.team ? ` (${l.team})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Assign to lead (admin) or team member (lead); hidden for members */}
+            {showAssign && (
+              <div>
+                <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                  {assignLabel}
+                </label>
+                <select
+                  value={assignLead}
+                  onChange={(e) => setAssignLead(e.target.value)}
+                  className="w-full input-base"
+                >
+                  <option value="">— choose later —</option>
+                  {leads.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}{l.team ? ` (${l.team})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Campaign / Project */}
             <div>
