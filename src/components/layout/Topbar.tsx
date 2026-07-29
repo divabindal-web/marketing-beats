@@ -66,6 +66,8 @@ export default function Topbar({ title, onNewRequest }: TopbarProps) {
       type: newRequest.type || 'Graphics',
       requested_by: newRequest.requested_by || 'Social Team',
       entity: newRequest.entity,
+      assigned_to: newRequest.assigned_to,
+      project_id: newRequest.project_id,
       title: newRequest.title || '',
       description: newRequest.description,
       requestor_name: newRequest.requestor_name || '',
