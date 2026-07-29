@@ -3,7 +3,8 @@
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { fetchRequests, updateRequest } from '@/lib/requests-api';
-import { List, Columns3, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { currentDbUser, deleteRequestById } from '@/lib/work-api';
+import { List, Columns3, CalendarDays, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { Request, RequestType } from '@/types';
 import {
   SAMPLE_REQUESTS,
@@ -67,6 +68,32 @@ function AllRequestsPageInner() {
     setRequests((prev) => prev.filter((r) => r.id !== id));
     setSelectedRequest(null);
     setIsPanelOpen(false);
+  };
+
+  // Per-row delete in the list — leads/admins only (RLS enforces server-side too)
+  const [canManageReq, setCanManageReq] = useState(false);
+  const [pendingRowDelete, setPendingRowDelete] = useState<string | null>(null);
+  const [rowDeleting, setRowDeleting] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    currentDbUser()
+      .then((me) => { if (alive) setCanManageReq(!!me && (me.is_lead || me.role === 'admin')); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const handleRowDelete = async (id: string) => {
+    if (rowDeleting) return;
+    setRowDeleting(true);
+    try {
+      await deleteRequestById(id);
+      setRequests((prev) => prev.filter((r) => r.id !== id));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not delete this request.');
+    } finally {
+      setRowDeleting(false);
+      setPendingRowDelete(null);
+    }
   };
 
   // Filter and sort requests
@@ -222,6 +249,7 @@ function AllRequestsPageInner() {
                 Need By {sortField === 'need_by' && (sortAscending ? '↑' : '↓')}
               </th>
               <th>TAT</th>
+              {canManageReq && <th></th>}
             </tr>
           </thead>
           <tbody>
@@ -272,6 +300,37 @@ function AllRequestsPageInner() {
                       return <span style={{ color, fontWeight: 500 }}>{formatBusinessHours(active)}</span>;
                     })()}
                   </td>
+                  {canManageReq && (
+                    <td>
+                      {pendingRowDelete === req.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            className="gb-btn"
+                            style={{ padding: '3px 8px', fontSize: '11.5px', backgroundColor: 'var(--error)', color: '#fff' }}
+                            disabled={rowDeleting}
+                            onClick={() => void handleRowDelete(req.id)}
+                          >
+                            {rowDeleting ? 'Deleting…' : 'Confirm'}
+                          </button>
+                          <button
+                            className="gb-btn gb-btn-secondary"
+                            style={{ padding: '3px 8px', fontSize: '11.5px' }}
+                            onClick={() => setPendingRowDelete(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="gb-icon-btn"
+                          title="Delete this request"
+                          onClick={() => setPendingRowDelete(req.id)}
+                        >
+                          <Trash2 size={14} strokeWidth={1.75} style={{ color: 'var(--error)' }} />
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
