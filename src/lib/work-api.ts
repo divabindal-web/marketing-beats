@@ -141,7 +141,7 @@ export async function deleteRequestById(id: string): Promise<void> {
 
 /* -------- team (DB users for pickers) -------- */
 /** Team options for pickers. Extend this list as new teams come on board. */
-export const TEAMS = ['Content', 'Graphics & Video', 'SEO', 'Paid', 'Social'];
+export const TEAMS = ['Azuro Marketing', 'Branding', 'Content', 'Graphics & Video', 'Paid', 'Research', 'SEO', 'Social'];
 export interface DbUserRow { id: string; name: string; email: string | null; role: string; team: string | null; is_lead: boolean; is_active: boolean; designation: string | null; }
 export async function listDbUsers(): Promise<DbUserRow[]> {
   const { data, error } = await supabase
