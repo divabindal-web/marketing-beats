@@ -368,19 +368,6 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
               />
             </div>
 
-            {/* Requestor Name (readonly) */}
-            <div>
-              <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
-                Requestor Name
-              </label>
-              <input
-                type="text"
-                value="Divya Krishnan"
-                disabled
-                className="w-full input-base bg-[var(--bg-tertiary)] cursor-not-allowed opacity-75"
-              />
-            </div>
-
             {/* Need By */}
             <div>
               <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">

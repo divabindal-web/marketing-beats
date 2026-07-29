@@ -5,22 +5,20 @@ import Link from 'next/link';
 import { Upload, Download } from 'lucide-react';
 import { fmtCompact, HOOTSUITE_SOURCES, HOOTSUITE_PERIOD } from '@/lib/perf-data';
 import { fetchSeries, type SeriesRow } from '@/lib/perf-api';
-import { HBars, StatCard } from '@/components/perf/Charts';
+import { StatCard } from '@/components/perf/Charts';
 
 /** Display metadata for the Hootsuite metric keys stored in the database. */
 const METRIC_META: Record<string, { label: string; unit: string }> = {
-  followers: { label: 'Followers', unit: 'followers' },
-  impressions: { label: 'Page & profile impressions', unit: 'impressions' },
-  profile_reach: { label: 'Page & profile reach', unit: 'people' },
+  followers: { label: 'Followers', unit: 'total across accounts' },
+  impressions: { label: 'Impressions', unit: 'pages & profiles' },
+  profile_reach: { label: 'Profile reach', unit: 'people' },
   post_reach: { label: 'Post reach', unit: 'people' },
-  link_clicks: { label: 'Post link clicks', unit: 'clicks' },
-  reactions: { label: 'Reactions & likes', unit: 'reactions' },
-  shares: { label: 'Shares', unit: 'shares' },
-  comments: { label: 'Comments & replies', unit: 'comments' },
+  link_clicks: { label: 'Link clicks', unit: 'from posts' },
+  reactions: { label: 'Reactions & likes', unit: '' },
+  shares: { label: 'Shares', unit: '' },
+  comments: { label: 'Comments', unit: '' },
 };
-const KPI_KEYS = ['followers', 'impressions', 'profile_reach', 'post_reach'];
-const ENGAGEMENT_KEYS = ['link_clicks', 'reactions', 'shares', 'comments'];
-const REACH_KEYS = ['impressions', 'profile_reach', 'post_reach', 'followers'];
+const ORDER = ['followers', 'impressions', 'profile_reach', 'post_reach', 'link_clicks', 'reactions', 'shares', 'comments'];
 
 const monthYear = (m: string) =>
   new Date(m + 'T00:00:00').toLocaleString('en-US', { month: 'long', year: 'numeric' });
@@ -43,26 +41,16 @@ export default function SocialHootsuitePage() {
     if (!rows || !rows.length) return null;
     const months = [...new Set(rows.map((r) => r.month))].sort();
     const latestMonth = months[months.length - 1];
-    const latest = rows.filter((r) => r.month === latestMonth);
-    const entities = [...new Set(latest.map((r) => r.entity))].sort();
-    const entity = entities.includes('All accounts') ? 'All accounts' : entities[0];
-    const vals = new Map<string, number | null>();
-    for (const r of latest) if (r.entity === entity) vals.set(r.metric, r.value);
-    const metric = (k: string) => ({
-      n: METRIC_META[k]?.label ?? k,
-      unit: METRIC_META[k]?.unit ?? '',
-      v: vals.get(k) ?? 0,
+    const prevMonth = months.length > 1 ? months[months.length - 2] : null;
+    const at = (month: string, metric: string) =>
+      rows.find((r) => r.month === month && r.metric === metric)?.value ?? null;
+    const tiles = ORDER.filter((k) => at(latestMonth, k) != null).map((k) => {
+      const cur = at(latestMonth, k)!;
+      const prev = prevMonth ? at(prevMonth, k) : null;
+      const mom = prev != null && prev !== 0 ? ((cur - prev) / Math.abs(prev)) * 100 : null;
+      return { k, label: METRIC_META[k]?.label ?? k, unit: METRIC_META[k]?.unit ?? '', cur, mom };
     });
-    return {
-      entity,
-      period: monthYear(latestMonth),
-      kpis: KPI_KEYS.filter((k) => vals.has(k)).map(metric),
-      engagement: ENGAGEMENT_KEYS.filter((k) => vals.has(k)).map(metric),
-      reach: REACH_KEYS.filter((k) => vals.has(k)).map((k) => {
-        const m = metric(k);
-        return { ...m, n: m.n.replace('Page & profile ', 'P&P ') };
-      }),
-    };
+    return { period: monthYear(latestMonth), tiles, hasTrend: prevMonth != null };
   }, [rows]);
 
   return (
@@ -71,10 +59,7 @@ export default function SocialHootsuitePage() {
         <div>
           <h1 className="gb-page-title">Social — Hootsuite</h1>
           <p className="gb-page-description">
-            All networks &amp; entities · {model?.period ?? HOOTSUITE_PERIOD} · from the Hootsuite custom report
-          </p>
-          <p className="text-[11.5px] mt-1" style={{ color: 'var(--text-faint)' }}>
-            Live from database · updated via Upload Data
+            {model?.period ?? HOOTSUITE_PERIOD} · totals across all 20 connected accounts
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -105,40 +90,40 @@ export default function SocialHootsuitePage() {
             No Social data yet
           </p>
           <p className="gb-page-description">
-            Upload a CSV on the{' '}
+            Upload a report on the{' '}
             <Link href="/performance-data/upload" style={{ textDecoration: 'underline' }}>
               Upload Data
             </Link>{' '}
-            page to populate this dashboard.
+            page.
           </p>
         </div>
       )}
 
       {model && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-            {model.kpis.map((k) => (
-              <StatCard key={k.n} label={k.n} value={fmtCompact(k.v)} sub={k.unit} />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            {model.tiles.map((t) => (
+              <StatCard
+                key={t.k}
+                label={t.label}
+                value={fmtCompact(t.cur)}
+                delta={t.mom != null ? { up: t.mom >= 0, txt: Math.abs(t.mom).toFixed(1) + '% MoM' } : null}
+                sub={t.unit || undefined}
+              />
             ))}
           </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <div className="gb-card p-4">
-              <h3 className="gb-section-title" style={{ marginBottom: 2 }}>Engagement — {model.period}</h3>
-              <p className="gb-page-description mb-3">clicks, reactions, shares, comments across all accounts</p>
-              <HBars items={model.engagement.map((e) => ({ n: e.n, v: e.v ?? 0 }))} labelW={150} color="#e87ba4" />
-            </div>
-            <div className="gb-card p-4">
-              <h3 className="gb-section-title" style={{ marginBottom: 2 }}>Reach &amp; impressions</h3>
-              <p className="gb-page-description mb-3">audience scale this month</p>
-              <HBars items={model.reach.map((e) => ({ n: e.n, v: e.v ?? 0 }))} labelW={130} color="#2a78d6" />
-            </div>
-          </div>
+          {!model.hasTrend && (
+            <p className="text-[11.5px] mb-6" style={{ color: 'var(--text-faint)' }}>
+              These are combined totals for one month. Month-over-month change appears automatically when the next
+              month&apos;s report is uploaded; per-account and per-platform breakdowns appear when the report is
+              exported per account instead of as totals.
+            </p>
+          )}
         </>
       )}
 
       <div className="gb-card p-4">
-        <h3 className="gb-section-title" style={{ marginBottom: 2 }}>Connected accounts (report sources)</h3>
+        <h3 className="gb-section-title" style={{ marginBottom: 2 }}>Connected accounts</h3>
         <p className="gb-page-description mb-3">
           20 accounts across LinkedIn, Facebook and Instagram — SQY, Urban Money and Azuro
         </p>
@@ -156,10 +141,6 @@ export default function SocialHootsuitePage() {
             </div>
           ))}
         </div>
-        <p className="text-[11.5px] mt-4" style={{ color: 'var(--text-faint)' }}>
-          Live numbers from the database. Upload the next Hootsuite export on the Upload Data page — month-over-month
-          trends appear once two or more periods are in.
-        </p>
       </div>
     </div>
   );

@@ -203,7 +203,7 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
         {navSections
-          .filter((section) => section.title !== 'Admin' || email === 'divya.krishnan@squareyards.com')
+          .filter((section) => section.title !== 'Admin' || email === 'divya.krishnan@squareyards.in')
           .map((section) => (
           <div key={section.title} className="mb-5">
             <h3 className="gb-nav-section-title">{section.title}</h3>

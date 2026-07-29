@@ -132,7 +132,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={handleKeyPress}
-              placeholder="you@squareyards.com"
+              placeholder="you@squareyards.in"
               className="gb-input"
               disabled={loading}
             />

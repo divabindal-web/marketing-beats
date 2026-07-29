@@ -120,7 +120,7 @@ function AddMemberModal({ isOpen, onClose, onAdded }: AddMemberModalProps) {
                 name="email"
                 value={form.email}
                 onChange={handleChange}
-                placeholder="name@squareyards.com"
+                placeholder="name@squareyards.in"
                 className="w-full input-base"
               />
             </div>
