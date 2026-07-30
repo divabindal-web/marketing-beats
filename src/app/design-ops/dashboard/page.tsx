@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { fetchRequests, createRequest, updateRequest } from '@/lib/requests-api';
+import { useRequestsRealtime } from '@/lib/use-requests-realtime';
 import Link from 'next/link';
 import {
   Plus,
@@ -57,12 +58,15 @@ export default function DashboardPage() {
   const [requests, setRequests] = useState<Request[]>(SAMPLE_REQUESTS);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Load persisted requests from Supabase on mount
-  useEffect(() => {
+  // Load persisted requests from Supabase on mount, and again whenever anyone
+  // changes a request or moves a stage (live updates across all users).
+  const loadRequests = useCallback(() => {
     fetchRequests()
       .then(setRequests)
       .catch((err) => console.error('Failed to load requests:', err));
   }, []);
+  useEffect(() => { loadRequests(); }, [loadRequests]);
+  useRequestsRealtime(loadRequests);
   const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 

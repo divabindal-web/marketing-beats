@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { fetchRequests, updateRequest } from '@/lib/requests-api';
+import { useRequestsRealtime } from '@/lib/use-requests-realtime';
 import { currentDbUser, deleteRequestById } from '@/lib/work-api';
 import { List, Columns3, CalendarDays, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { Request, RequestType } from '@/types';
@@ -32,12 +33,15 @@ function AllRequestsPageInner() {
   const [requests, setRequests] = useState<Request[]>(SAMPLE_REQUESTS);
   const [currentView, setCurrentView] = useState<ViewType>('list');
 
-  // Load persisted requests from Supabase on mount
-  useEffect(() => {
+  // Load persisted requests from Supabase on mount, and live-refresh whenever
+  // anyone changes a request or moves a stage.
+  const loadRequests = useCallback(() => {
     fetchRequests()
       .then(setRequests)
       .catch((err) => console.error('Failed to load requests:', err));
   }, []);
+  useEffect(() => { loadRequests(); }, [loadRequests]);
+  useRequestsRealtime(loadRequests);
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') ?? '');
   const [typeFilters, setTypeFilters] = useState<RequestType[]>([]);
   const [stageFilters, setStageFilters] = useState<string[]>([]);

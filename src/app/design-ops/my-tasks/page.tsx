@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { CalendarClock, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { currentDbUser } from '@/lib/work-api';
+import { useRequestsRealtime } from '@/lib/use-requests-realtime';
 
 interface Row {
   id: string; title: string; type: string; entity: string | null;
@@ -20,27 +21,28 @@ export default function MyTasksPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const me = await currentDbUser();
-        if (!me) { setErr('Your login is not linked to a team member record.'); setLoading(false); return; }
-        // "Mine" = I own it (assigned_to) OR I'm a point of contact on it
-        // (social / video / design POC). Any of these should surface here.
-        const { data, error } = await supabase
-          .from('requests')
-          .select('id, title, type, entity, current_stage, need_by, requestor_name')
-          .or(`assigned_to.eq.${me.id},social_poc.eq.${me.id},video_poc.eq.${me.id},design_poc.eq.${me.id}`)
-          .order('need_by', { ascending: true });
-        if (error) throw error;
-        setRows((data as Row[]) ?? []);
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e));
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const load = useCallback(async () => {
+    try {
+      const me = await currentDbUser();
+      if (!me) { setErr('Your login is not linked to a team member record.'); setLoading(false); return; }
+      // "Mine" = I own it (assigned_to) OR I'm a point of contact on it
+      // (social / video / design POC). Any of these should surface here.
+      const { data, error } = await supabase
+        .from('requests')
+        .select('id, title, type, entity, current_stage, need_by, requestor_name')
+        .or(`assigned_to.eq.${me.id},social_poc.eq.${me.id},video_poc.eq.${me.id},design_poc.eq.${me.id}`)
+        .order('need_by', { ascending: true });
+      if (error) throw error;
+      setRows((data as Row[]) ?? []);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
   }, []);
+  // Load on mount, and live-refresh when anyone changes a request or stage.
+  useEffect(() => { load(); }, [load]);
+  useRequestsRealtime(load);
 
   const today = new Date().toISOString().slice(0, 10);
   const buckets = useMemo(() => ({
