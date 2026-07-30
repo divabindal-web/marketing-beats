@@ -375,44 +375,57 @@ function AllRequestsPageInner() {
     </div>
   );
 
+  const stageDot = (stage: string): string =>
+    ['Done', 'Uploaded'].includes(stage) ? 'var(--success)'
+    : stage === 'Change Req' ? 'var(--warning)'
+    : stage === 'Assigned' ? 'var(--text-faint)'
+    : 'var(--brand)';
+
   const renderKanbanView = () => (
-    <div className="overflow-x-auto">
-      <div className="flex gap-4 pb-4 min-w-max">
+    <div className="overflow-x-auto pb-2">
+      <div className="flex gap-3.5 pb-4 min-w-max">
         {kanbanStages.map(stage => {
           const stageRequests = filteredRequests.filter(r => r.current_stage === stage);
           return (
-            <div key={stage} className="flex-shrink-0 w-72 gb-card" style={{ display: 'flex', flexDirection: 'column' }}
+            <div key={stage} className="flex-shrink-0 w-72 rounded-xl"
+              style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', maxHeight: 560 }}
               onDragOver={handleDragOver} onDrop={e => handleDrop(e, stage)}>
-              <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-                <h3 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {stage}
-                  <span className="gb-badge gb-badge-blue">{stageRequests.length}</span>
-                </h3>
+              <div className="flex items-center gap-2 px-3.5 py-3">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: stageDot(stage) }} />
+                <h3 className="text-[12.5px] font-semibold flex-1 truncate" style={{ color: 'var(--text-primary)' }}>{stage}</h3>
+                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md tabular-nums" style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>{stageRequests.length}</span>
               </div>
-              <div style={{ maxHeight: '480px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px' }}>
+              <div className="flex flex-col gap-2.5 px-2.5 pb-3 overflow-y-auto mb-stagger">
+                {stageRequests.length === 0 && (
+                  <div className="text-[11.5px] text-center py-6 rounded-lg" style={{ color: 'var(--text-faint)', border: '1px dashed var(--border-strong)' }}>Drop tasks here</div>
+                )}
                 {stageRequests.map(req => {
                   const assignee = getUserById(req.assigned_to);
                   const daysUntilDue = getDaysUntilDue(req.need_by);
-                  const isOverdueReq = daysUntilDue < 0;
+                  const isOverdueReq = daysUntilDue < 0 && !['Done', 'Uploaded'].includes(req.current_stage);
                   return (
                     <div key={req.id} draggable onDragStart={e => handleDragStart(e, req)}
-                      className="gb-card gb-card-hover" style={{ padding: '10px', cursor: 'move' }}
-                      onClick={() => handleOpenRequest(req)}>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className={`gb-badge ${typeColors[req.type].badge}`}>
-                          {req.type === 'Social Media Graphics' ? 'SMG' : req.type}
-                        </span>
-                      </div>
-                      <h4 className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text-primary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        {req.title}
-                      </h4>
-                      <div className="flex items-center justify-between mt-2 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
-                        <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                          {assignee ? assignee.name.split(' ')[0] : 'Unassigned'}
-                        </span>
-                        <span className="text-[11px] font-medium" style={{ color: isOverdueReq ? 'var(--error)' : 'var(--text-muted)' }}>
-                          {isOverdueReq ? 'OVERDUE' : formatDate(req.need_by)}
-                        </span>
+                      className="gb-card gb-card-hover relative overflow-hidden"
+                      style={{ cursor: 'grab' }} onClick={() => handleOpenRequest(req)}>
+                      <span className="absolute left-0 top-0 h-full w-[3px]" style={{ backgroundColor: isOverdueReq ? 'var(--error)' : typeColors[req.type].dot }} />
+                      <div style={{ padding: '10px 12px 11px 14px' }}>
+                        <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                          <span className={`gb-badge ${typeColors[req.type].badge}`}>{req.type === 'Social Media Graphics' ? 'SMG' : req.type}</span>
+                          {req.entity && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-faint)' }}>{req.entity}</span>}
+                        </div>
+                        <h4 className="text-[13px] font-semibold leading-snug mb-2" style={{ color: 'var(--text-primary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{req.title}</h4>
+                        <div className="flex items-center justify-between gap-2 mt-2 pt-2" style={{ borderTop: '1px solid var(--border-light)' }}>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0" style={{ backgroundColor: assignee ? 'var(--brand-soft)' : 'var(--bg-tertiary)', color: assignee ? 'var(--accent-text)' : 'var(--text-faint)' }}>
+                              {assignee ? getInitials(assignee.name) : '?'}
+                            </span>
+                            <span className="text-[11px] truncate" style={{ color: 'var(--text-secondary)' }}>{assignee ? assignee.name.split(' ')[0] : 'Unassigned'}</span>
+                          </div>
+                          <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0" style={{ backgroundColor: isOverdueReq ? 'var(--error-bg)' : 'var(--bg-tertiary)', color: isOverdueReq ? 'var(--error)' : 'var(--text-muted)' }}>
+                            <CalendarDays size={10} />
+                            {isOverdueReq ? `${Math.abs(daysUntilDue)}d late` : formatDate(req.need_by)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   );
