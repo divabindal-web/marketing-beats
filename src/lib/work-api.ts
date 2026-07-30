@@ -40,6 +40,25 @@ export async function currentDbUser(): Promise<MeRow | null> {
   return dbUserPromise;
 }
 
+/* -------- team lookup (email -> team) --------
+ * SAMPLE_USERS carry no team; team lives in the DB users table. This bridges
+ * them by email so UI (POC dropdowns, mark-complete scoping) can filter by team.
+ * Cached for the session. */
+let teamMapPromise: Promise<Map<string, string>> | null = null;
+export async function userTeamByEmail(): Promise<Map<string, string>> {
+  if (!teamMapPromise) {
+    teamMapPromise = (async () => {
+      const { data } = await supabase.from('users').select('email, team');
+      const m = new Map<string, string>();
+      (data ?? []).forEach((u: { email: string | null; team: string | null }) => {
+        if (u.email && u.team) m.set(u.email.toLowerCase(), u.team);
+      });
+      return m;
+    })();
+  }
+  return teamMapPromise;
+}
+
 /* -------- subtasks -------- */
 export async function listSubtasks(requestId: string): Promise<Subtask[]> {
   const { data, error } = await supabase.from('subtasks').select('*').eq('request_id', requestId).order('position').order('created_at');

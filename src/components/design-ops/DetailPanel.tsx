@@ -19,6 +19,7 @@ import {
   uploadAttachment,
   deleteAttachment,
   currentDbUser,
+  userTeamByEmail,
   deleteRequestById,
 } from '@/lib/work-api';
 
@@ -69,21 +70,28 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
 
   // Leads/admins: can delete requests and reassign people. Members: read-only on
   // assignment (their lead assigns work to them), no delete.
-  const [canDelete, setCanDelete] = useState(false);
-  const canAssign = canDelete;
+  const [me, setMe] = useState<{ role: string; team: string | null; is_lead: boolean } | null>(null);
+  const [teamByEmail, setTeamByEmail] = useState<Map<string, string>>(new Map());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [stageError, setStageError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     currentDbUser()
-      .then((me) => {
-        if (!cancelled) setCanDelete(!!me && (me.is_lead || me.role === 'admin'));
-      })
+      .then((m) => { if (!cancelled) setMe(m); })
+      .catch(() => {});
+    userTeamByEmail()
+      .then((m) => { if (!cancelled) setTeamByEmail(m); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  const teamOf = (u?: User) => (u?.email ? teamByEmail.get(u.email.toLowerCase()) ?? null : null);
+
+  const canDelete = !!me && (me.is_lead || me.role === 'admin');
+  const canAssign = canDelete;
 
   const handleDeleteRequest = async () => {
     if (deleting) return;
@@ -212,6 +220,27 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
   const isFinal = request.current_stage === 'Done' || request.current_stage === 'Uploaded';
   const isReadyToUpload = request.current_stage === 'Ready to Upload';
 
+  // "Mark complete" = moving a task into a final stage. Restricted to the CMO
+  // (admin) or the lead of the task's team (the assignee's team). Members and
+  // leads of other teams cannot complete a task.
+  const isFinalStage = (s: string) => s === 'Done' || s === 'Uploaded';
+  const assigneeTeam = teamOf(users.find((u) => u.id === request.assigned_to));
+  const canMarkComplete =
+    !!me && (me.role === 'admin' || (me.is_lead && (!assigneeTeam || assigneeTeam === me.team)));
+  const completeBlockedMsg = 'Only the team lead or CMO can mark a task complete.';
+
+  // POC dropdowns are scoped to the relevant team: Social POC -> Social team,
+  // Design & Video POC -> Graphics & Video team. Any person already saved on the
+  // request is kept in the list so an existing off-team value is never lost.
+  const pocOptions = (team: string, currentId?: string) => {
+    const list = users.filter((u) => teamOf(u) === team);
+    if (currentId && !list.some((u) => u.id === currentId)) {
+      const cur = users.find((u) => u.id === currentId);
+      if (cur) return [cur, ...list];
+    }
+    return list;
+  };
+
   const appendTransition = (toStage: Request['current_stage']): Request => {
     const nowIso = new Date().toISOString();
     const existing = request.transitions ?? [];
@@ -235,18 +264,22 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
   };
 
   const handleStageChange = (newStage: string) => {
-    if (newStage !== request.current_stage) {
-      onUpdate(appendTransition(newStage as Request['current_stage']));
-    }
+    if (newStage === request.current_stage) return;
+    if (isFinalStage(newStage) && !canMarkComplete) { setStageError(completeBlockedMsg); return; }
+    setStageError('');
+    onUpdate(appendTransition(newStage as Request['current_stage']));
   };
 
   const handleAdvanceStage = () => {
-    if (nextStage) {
-      onUpdate(appendTransition(nextStage as Request['current_stage']));
-    }
+    if (!nextStage) return;
+    if (isFinalStage(nextStage) && !canMarkComplete) { setStageError(completeBlockedMsg); return; }
+    setStageError('');
+    onUpdate(appendTransition(nextStage as Request['current_stage']));
   };
 
   const handleMarkComplete = () => {
+    if (!canMarkComplete) { setStageError(completeBlockedMsg); return; }
+    setStageError('');
     const finalStage = stages[stages.length - 1];
     onUpdate(appendTransition(finalStage as Request['current_stage']));
   };
@@ -364,8 +397,9 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                   <div key={stage} className="flex items-center gap-1 flex-shrink-0">
                     <button
                       onClick={() => handleStageChange(stage)}
-                      className="flex flex-col items-center cursor-pointer group"
-                      title={`Move to ${stage}`}
+                      disabled={isFinalStage(stage) && !canMarkComplete}
+                      className="flex flex-col items-center cursor-pointer group disabled:cursor-not-allowed disabled:opacity-50"
+                      title={isFinalStage(stage) && !canMarkComplete ? completeBlockedMsg : `Move to ${stage}`}
                     >
                       <div
                         className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-colors group-hover:ring-2 group-hover:ring-offset-1 ${
@@ -404,12 +438,12 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
               className="flex-1 input-base text-sm"
             >
               {stages.map((s) => (
-                <option key={s} value={s}>
+                <option key={s} value={s} disabled={isFinalStage(s) && !canMarkComplete}>
                   {s}
                 </option>
               ))}
             </select>
-            {nextStage && !isFinal && (
+            {nextStage && !isFinal && !(isFinalStage(nextStage) && !canMarkComplete) && (
               <button
                 onClick={handleAdvanceStage}
                 className="gb-btn gb-btn-primary whitespace-nowrap"
@@ -418,6 +452,9 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
               </button>
             )}
           </div>
+          {stageError && (
+            <p className="text-[12px] -mt-2" style={{ color: 'var(--error)' }}>{stageError}</p>
+          )}
 
           {/* Stage-wise TAT Breakdown */}
           <div>
@@ -562,7 +599,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                   disabled={!canAssign}
                 >
                   <option value="">-- Select --</option>
-                  {users.map((u) => (
+                  {pocOptions('Social', request.social_poc).map((u) => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
@@ -580,7 +617,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                     disabled={!canAssign}
                   >
                     <option value="">-- Select --</option>
-                    {users.map((u) => (
+                    {pocOptions('Graphics & Video', request.video_poc).map((u) => (
                       <option key={u.id} value={u.id}>{u.name}</option>
                     ))}
                   </select>
@@ -598,7 +635,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                   disabled={!canAssign}
                 >
                   <option value="">-- Select --</option>
-                  {users.map((u) => (
+                  {pocOptions('Graphics & Video', request.design_poc).map((u) => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
@@ -820,7 +857,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
 
         {/* Footer */}
         <div className="border-t border-[var(--border)] p-4 bg-[var(--bg-secondary)] space-y-2">
-          {!isFinal && (
+          {!isFinal && canMarkComplete && (
             <button
               onClick={handleMarkComplete}
               className="w-full px-4 py-2 rounded-md text-white text-sm font-medium hover:opacity-90 transition-colors"

@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useCallback, Suspense } from 'reac
 import { useSearchParams } from 'next/navigation';
 import { fetchRequests, updateRequest } from '@/lib/requests-api';
 import { useRequestsRealtime } from '@/lib/use-requests-realtime';
-import { currentDbUser, deleteRequestById } from '@/lib/work-api';
+import { currentDbUser, userTeamByEmail, deleteRequestById } from '@/lib/work-api';
 import { List, Columns3, CalendarDays, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { Request, RequestType } from '@/types';
 import {
@@ -75,16 +75,33 @@ function AllRequestsPageInner() {
   };
 
   // Per-row delete in the list — leads/admins only (RLS enforces server-side too)
-  const [canManageReq, setCanManageReq] = useState(false);
+  const [me, setMe] = useState<{ role: string; team: string | null; is_lead: boolean } | null>(null);
+  const [teamByEmail, setTeamByEmail] = useState<Map<string, string>>(new Map());
   const [pendingRowDelete, setPendingRowDelete] = useState<string | null>(null);
   const [rowDeleting, setRowDeleting] = useState(false);
   useEffect(() => {
     let alive = true;
     currentDbUser()
-      .then((me) => { if (alive) setCanManageReq(!!me && (me.is_lead || me.role === 'admin')); })
+      .then((m) => { if (alive) setMe(m); })
+      .catch(() => {});
+    userTeamByEmail()
+      .then((m) => { if (alive) setTeamByEmail(m); })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+  const canManageReq = !!me && (me.is_lead || me.role === 'admin');
+
+  // Mark-complete (moving to a final stage) is limited to the CMO or the lead of
+  // the task's team (assignee's team). Mirrors the rule enforced in DetailPanel.
+  const isFinalStage = (s: string) => s === 'Done' || s === 'Uploaded';
+  const canCompleteReq = (req: Request) => {
+    if (!me) return false;
+    if (me.role === 'admin') return true;
+    if (!me.is_lead) return false;
+    const assignee = SAMPLE_USERS.find((u) => u.id === req.assigned_to);
+    const team = assignee?.email ? teamByEmail.get(assignee.email.toLowerCase()) ?? null : null;
+    return !team || team === me.team;
+  };
 
   const handleRowDelete = async (id: string) => {
     if (rowDeleting) return;
@@ -183,6 +200,11 @@ function AllRequestsPageInner() {
 
   const handleDrop = (e: React.DragEvent, newStage: string) => {
     e.preventDefault();
+    if (draggedRequest && isFinalStage(newStage) && !canCompleteReq(draggedRequest)) {
+      alert('Only the team lead or CMO can mark a task complete.');
+      setDraggedRequest(null);
+      return;
+    }
     if (draggedRequest && newStage !== draggedRequest.current_stage) {
       const nowIso = new Date().toISOString();
       const updated: Request = {
@@ -209,6 +231,10 @@ function AllRequestsPageInner() {
   /* ---- Quick inline stage change on list view ---- */
   const handleInlineStageChange = (req: Request, newStage: string) => {
     if (newStage === req.current_stage) return;
+    if (isFinalStage(newStage) && !canCompleteReq(req)) {
+      alert('Only the team lead or CMO can mark a task complete.');
+      return;
+    }
     const nowIso = new Date().toISOString();
     const updated: Request = {
       ...req,

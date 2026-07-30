@@ -15,7 +15,13 @@ export const REMEMBER_KEY = 'mb-remember-device';
 const authStorage = {
   getItem: (key: string): string | null => {
     if (typeof window === 'undefined') return null;
-    return window.sessionStorage.getItem(key) ?? window.localStorage.getItem(key);
+    // Read the store that matches the current preference FIRST. Reading
+    // sessionStorage first used to let a stale per-tab token shadow the valid
+    // persisted one, which logged people out on refresh.
+    const remember = window.localStorage.getItem(REMEMBER_KEY) !== 'no';
+    const primary = remember ? window.localStorage : window.sessionStorage;
+    const secondary = remember ? window.sessionStorage : window.localStorage;
+    return primary.getItem(key) ?? secondary.getItem(key);
   },
   setItem: (key: string, value: string): void => {
     if (typeof window === 'undefined') return;
@@ -36,5 +42,10 @@ const authStorage = {
 };
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: { storage: authStorage, persistSession: true },
+  auth: {
+    storage: authStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+  },
 });
