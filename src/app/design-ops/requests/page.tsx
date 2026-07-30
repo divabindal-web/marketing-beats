@@ -224,6 +224,7 @@ function AllRequestsPageInner() {
         ],
       };
       setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      updateRequest(updated).catch((err) => alert('Could not save the change: ' + (err?.message ?? String(err))));
     }
     setDraggedRequest(null);
   };
@@ -253,6 +254,7 @@ function AllRequestsPageInner() {
       ],
     };
     setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    updateRequest(updated).catch((err) => alert('Could not save the change: ' + (err?.message ?? String(err))));
   };
 
   const requestsByDate = useMemo(() => {
