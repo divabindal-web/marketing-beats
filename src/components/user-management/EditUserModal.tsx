@@ -126,7 +126,7 @@ export default function EditUserModal({
           </button>
           <button
             onClick={handleSave}
-            className="flex-1 px-4 py-2 rounded-md bg-[var(--accent)] text-white font-medium hover:opacity-90 transition-opacity"
+            className="flex-1 px-4 py-2 rounded-md bg-[var(--accent)] text-[var(--on-accent)] font-semibold hover:opacity-90 transition-all active:scale-[0.98]"
           >
             Save
           </button>

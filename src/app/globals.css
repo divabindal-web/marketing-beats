@@ -9,23 +9,30 @@
     --bg-sidebar: #fbfbfa;
     --bg-card: #ffffff;
     --bg-hover: #f3f4f6;
-    --bg-active: #eef2ff;
+    --bg-active: #fff6d1;
     --bg-code: #f6f7f9;
 
     --text-primary: #1c1e21;
     --text-secondary: #4b5260;
     --text-muted: #6b7280;
     --text-faint: #9ca3af;
-    --text-link: #346ddb;
+    --text-link: #8a6a00;
 
     --border: #e6e8eb;
     --border-light: #eef0f2;
     --border-strong: #d0d4da;
 
-    --accent: #346ddb;
-    --accent-hover: #2a5dc4;
-    --accent-light: #eef2ff;
-    --accent-text: #346ddb;
+    /* Square Yards brand — signature yellow #FFD916 + red #FA1321.
+       Yellow needs dark text, so interactive fills pair with --on-accent. */
+    --brand: #ffd916;
+    --brand-strong: #eac200;
+    --brand-soft: #fff6d1;
+    --brand-red: #e11722;
+    --on-accent: #1b1d21;
+    --accent: #ffd916;
+    --accent-hover: #f2cf12;
+    --accent-light: #fff6d1;
+    --accent-text: #8a6a00;
 
     --success: #0a7c44;
     --success-bg: #e7f6ed;
@@ -56,23 +63,29 @@
     --bg-sidebar: #0b0d11;
     --bg-card: #14171d;
     --bg-hover: #1d2027;
-    --bg-active: #1e2a4a;
+    --bg-active: #2a2610;
     --bg-code: #181b22;
 
     --text-primary: #e8eaed;
     --text-secondary: #b4b8c0;
     --text-muted: #8a8f99;
     --text-faint: #5e6470;
-    --text-link: #6b9aff;
+    --text-link: #ffe24d;
 
     --border: #23262e;
     --border-light: #1c1f26;
     --border-strong: #2e323b;
 
-    --accent: #6b9aff;
-    --accent-hover: #85adff;
-    --accent-light: #1a2540;
-    --accent-text: #8fb1ff;
+    /* Square Yards brand in dark — yellow reads on dark, so accent-text is yellow */
+    --brand: #ffd916;
+    --brand-strong: #ffe24d;
+    --brand-soft: #34300f;
+    --brand-red: #ff5a5f;
+    --on-accent: #1b1d21;
+    --accent: #ffd916;
+    --accent-hover: #ffe24d;
+    --accent-light: #34300f;
+    --accent-text: #ffd916;
 
     --success: #4ade80;
     --success-bg: #112a1c;
@@ -172,6 +185,7 @@
     background-color: var(--bg-active);
     color: var(--accent-text);
     font-weight: 550;
+    box-shadow: inset 2.5px 0 0 var(--brand);
   }
 
   .gb-nav-item-active:hover {
@@ -217,20 +231,24 @@
     font-size: 13px;
     font-weight: 500;
     line-height: 1;
-    transition: all 120ms ease;
+    transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
     cursor: pointer;
     border: 1px solid transparent;
     white-space: nowrap;
   }
+  .gb-btn:active { transform: scale(0.975); }
 
   .gb-btn-primary {
     background-color: var(--accent);
-    color: #ffffff;
-    border-color: var(--accent);
+    color: var(--on-accent);
+    border-color: var(--brand-strong);
+    box-shadow: 0 1px 2px rgba(20, 18, 0, 0.12);
+    font-weight: 600;
   }
   .gb-btn-primary:hover {
     background-color: var(--accent-hover);
-    border-color: var(--accent-hover);
+    border-color: var(--brand-strong);
+    box-shadow: 0 2px 8px -1px rgba(234, 194, 0, 0.35);
   }
 
   .gb-btn-secondary {
@@ -331,11 +349,12 @@
     background-color: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    transition: border-color 120ms ease, box-shadow 120ms ease;
+    transition: transform 160ms cubic-bezier(0.22, 0.61, 0.36, 1), border-color 160ms ease, box-shadow 160ms ease;
   }
   .gb-card-hover:hover {
+    transform: translateY(-2px);
     border-color: var(--border-strong);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-md);
   }
 
   .gb-stat-card {
@@ -546,12 +565,13 @@
   }
   .button-primary {
     background-color: var(--accent);
-    color: #ffffff;
-    border-color: var(--accent);
+    color: var(--on-accent);
+    border-color: var(--brand-strong);
+    font-weight: 600;
   }
   .button-primary:hover {
     background-color: var(--accent-hover);
-    border-color: var(--accent-hover);
+    border-color: var(--brand-strong);
   }
   .button-secondary {
     background-color: var(--bg-primary);
@@ -623,4 +643,61 @@ html { scroll-behavior: smooth; }
 
 @supports (scrollbar-gutter: stable) {
   html { scrollbar-gutter: stable; }
+}
+
+/* ─── Motion layer ──────────────────────────────────────────────
+   Subtle, brand-consistent entrance + interaction motion. All of it
+   collapses under prefers-reduced-motion (accessibility). */
+@keyframes mb-fade-up   { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+@keyframes mb-fade-in   { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mb-scale-in  { from { opacity: 0; transform: scale(0.975); } to { opacity: 1; transform: none; } }
+@keyframes mb-shimmer   { 100% { transform: translateX(100%); } }
+@keyframes mb-pop       { 0% { transform: scale(0.9); } 60% { transform: scale(1.04); } 100% { transform: scale(1); } }
+
+.mb-animate-in  { animation: mb-fade-up 0.4s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.mb-fade-in     { animation: mb-fade-in 0.3s ease both; }
+.mb-scale-in    { animation: mb-scale-in 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.mb-pop         { animation: mb-pop 0.28s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+
+/* Stagger children of a list/grid for a polished cascade */
+.mb-stagger > * { animation: mb-fade-up 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.mb-stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.mb-stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.mb-stagger > *:nth-child(3) { animation-delay: 0.10s; }
+.mb-stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.mb-stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.mb-stagger > *:nth-child(6) { animation-delay: 0.22s; }
+.mb-stagger > *:nth-child(7) { animation-delay: 0.26s; }
+.mb-stagger > *:nth-child(8) { animation-delay: 0.30s; }
+
+/* Brand gradient — for logo marks and hero accents */
+.mb-brand-gradient {
+  background: linear-gradient(135deg, #ffe24d 0%, #ffd916 45%, #f2b705 100%);
+  color: var(--on-accent);
+}
+/* Skeleton shimmer surface */
+.mb-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+}
+.mb-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 217, 22, 0.10), transparent);
+  animation: mb-shimmer 1.4s infinite;
+}
+
+.gb-icon-btn { transition: transform 120ms ease, background-color 120ms ease, color 120ms ease; }
+.gb-icon-btn:active { transform: scale(0.92); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -13,8 +13,8 @@ function ViewAsBanner() {
   if (!target) return null;
   return (
     <div
-      className="flex items-center justify-center gap-3 px-4 py-2 text-[12.5px] font-medium"
-      style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
+      className="flex items-center justify-center gap-3 px-4 py-2 text-[12.5px] font-medium mb-fade-in"
+      style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }}
     >
       <span>
         Viewing as <strong>{target.name}</strong>
@@ -22,8 +22,8 @@ function ViewAsBanner() {
       </span>
       <button
         onClick={() => setTarget(null)}
-        className="px-2 py-0.5 rounded text-[11px] font-semibold"
-        style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}
+        className="px-2 py-0.5 rounded text-[11px] font-semibold transition-transform active:scale-95"
+        style={{ backgroundColor: 'rgba(0,0,0,0.14)' }}
       >
         Exit
       </button>
@@ -91,7 +91,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
 
               <main className="flex-1 mt-14">
                 <ViewAsBanner />
-                <div className="max-w-[1200px] mx-auto px-10 py-10">
+                <div className="max-w-[1200px] mx-auto px-10 py-10 mb-animate-in">
                   {children}
                 </div>
               </main>

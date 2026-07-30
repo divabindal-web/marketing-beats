@@ -406,7 +406,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                           isDone
                             ? 'bg-[var(--success)] text-white group-hover:ring-[var(--success)]'
                             : isActive
-                            ? 'bg-[var(--accent)] text-white group-hover:ring-[var(--accent)]'
+                            ? 'bg-[var(--accent)] text-[var(--on-accent)] group-hover:ring-[var(--accent)]'
                             : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)] group-hover:ring-[var(--border)]'
                         }`}
                         style={{ /* ring offset handled by tailwind */ }}

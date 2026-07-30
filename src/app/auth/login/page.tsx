@@ -80,7 +80,7 @@ export default function LoginPage() {
       {/* Login card */}
       <div className="w-full max-w-[420px]">
         <div
-          className="gb-card"
+          className="gb-card mb-scale-in"
           style={{
             padding: '40px 36px',
             boxShadow: 'var(--shadow-md)',
@@ -89,12 +89,8 @@ export default function LoginPage() {
           {/* Brand */}
           <div className="text-center mb-8">
             <div
-              className="w-11 h-11 mx-auto mb-4 rounded-lg flex items-center justify-center font-semibold text-[18px]"
-              style={{
-                backgroundColor: 'var(--accent-light)',
-                color: 'var(--accent-text)',
-                border: '1px solid var(--border)',
-              }}
+              className="w-12 h-12 mx-auto mb-4 rounded-xl flex items-center justify-center font-bold text-[20px] mb-brand-gradient mb-pop"
+              style={{ boxShadow: '0 6px 18px -3px rgba(234, 194, 0, 0.55)' }}
             >
               M
             </div>

@@ -353,7 +353,7 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
             <button
               onClick={handleSubmit}
               disabled={isSubmitDisabled}
-              className={`flex-1 px-4 py-2 rounded-md text-white font-medium transition-colors ${
+              className={`flex-1 px-4 py-2 rounded-md text-[var(--on-accent)] font-semibold transition-all active:scale-[0.98] ${
                 isSubmitDisabled
                   ? 'bg-[var(--accent)] opacity-50 cursor-not-allowed'
                   : 'bg-[var(--accent)] hover:opacity-90'

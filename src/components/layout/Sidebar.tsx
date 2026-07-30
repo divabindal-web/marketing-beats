@@ -197,12 +197,8 @@ export default function Sidebar() {
       <div className="px-4 pt-5 pb-4">
         <Link href="/design-ops/dashboard" className="flex items-center gap-2.5 group">
           <div
-            className="w-7 h-7 rounded-md flex items-center justify-center font-semibold text-[13px] flex-shrink-0"
-            style={{
-              backgroundColor: 'var(--accent-light)',
-              color: 'var(--accent-text)',
-              border: '1px solid var(--border)',
-            }}
+            className="w-7 h-7 rounded-md flex items-center justify-center font-bold text-[13px] flex-shrink-0 mb-brand-gradient transition-transform group-hover:scale-105"
+            style={{ boxShadow: '0 2px 6px -1px rgba(234, 194, 0, 0.5)' }}
           >
             M
           </div>
