@@ -261,16 +261,21 @@ function IndividualDashboard({
   return (
     <>
       {/* Greeting */}
-      <div className="mb-6 text-[13px]" style={{ color: 'var(--text-secondary)' }}>
-        Welcome back, <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{userName}</span>.
+      <div className="mb-6">
+        <h1 className="text-[22px] font-semibold" style={{ color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+          {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}, {userName.split(' ')[0]}
+        </h1>
+        <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+          {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} · here’s your workload at a glance
+        </p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-        <StatCard label="My pending" value={pending.length} icon={Clock} />
-        <StatCard label="Completed" value={completed.length} icon={CheckCircle2} />
-        <StatCard label="Overdue" value={overdue.length} icon={AlertCircle} alert={overdue.length > 0} />
-        <StatCard label="Near SLA" value={breachingSLA.length} icon={AlertTriangle} alert={breachingSLA.length > 0} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 mb-stagger">
+        <StatCard label="My pending" value={pending.length} icon={Clock} tone="brand" />
+        <StatCard label="Completed" value={completed.length} icon={CheckCircle2} tone="success" />
+        <StatCard label="Overdue" value={overdue.length} icon={AlertCircle} tone={overdue.length > 0 ? 'error' : 'neutral'} />
+        <StatCard label="Near SLA" value={breachingSLA.length} icon={AlertTriangle} tone={breachingSLA.length > 0 ? 'warning' : 'neutral'} />
       </div>
 
       {/* Priority work queue */}
@@ -431,13 +436,13 @@ function ManagerDashboard({
   return (
     <>
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
-        <StatCard label="Total" value={totalRequests} icon={Activity} />
-        <StatCard label="Completed" value={completedRequests} icon={CheckCircle2} />
-        <StatCard label="Active" value={activeRequests} icon={Clock} />
-        <StatCard label="Overdue" value={overdueRequests} icon={AlertCircle} alert={overdueRequests > 0} />
-        <StatCard label="Avg TAT" value={`${avgTAT}h`} icon={TrendingUp} />
-        <StatCard label="Change Req" value={changeRequests} icon={RefreshCw} />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-8 mb-stagger">
+        <StatCard label="Total" value={totalRequests} icon={Activity} tone="brand" />
+        <StatCard label="Completed" value={completedRequests} icon={CheckCircle2} tone="success" />
+        <StatCard label="Active" value={activeRequests} icon={Clock} tone="neutral" />
+        <StatCard label="Overdue" value={overdueRequests} icon={AlertCircle} tone={overdueRequests > 0 ? 'error' : 'neutral'} />
+        <StatCard label="Avg TAT" value={`${avgTAT}h`} icon={TrendingUp} tone="brand" />
+        <StatCard label="Change Req" value={changeRequests} icon={RefreshCw} tone={changeRequests > 0 ? 'warning' : 'neutral'} />
       </div>
 
       {/* Watch list — members with issues */}
@@ -596,35 +601,53 @@ function ManagerDashboard({
 /*  Shared components                                                  */
 /* ================================================================== */
 
+type Tone = 'brand' | 'success' | 'warning' | 'error' | 'neutral';
+const TONES: Record<Tone, { fg: string; chip: string; bar: string }> = {
+  brand:   { fg: 'var(--accent-text)', chip: 'var(--brand-soft)',   bar: 'var(--brand)' },
+  success: { fg: 'var(--success)',     chip: 'var(--success-bg)',   bar: 'var(--success)' },
+  warning: { fg: 'var(--warning)',     chip: 'var(--warning-bg)',   bar: 'var(--warning)' },
+  error:   { fg: 'var(--error)',       chip: 'var(--error-bg)',     bar: 'var(--error)' },
+  neutral: { fg: 'var(--text-muted)',  chip: 'var(--bg-tertiary)',  bar: 'var(--border-strong)' },
+};
+
 function StatCard({
   label,
   value,
   icon: Icon,
-  alert,
+  tone = 'neutral',
+  caption,
 }: {
   label: string;
   value: number | string;
   icon: any;
-  alert?: boolean;
+  tone?: Tone;
+  caption?: string;
 }) {
+  const t = TONES[tone];
   return (
-    <div className="gb-stat-card">
-      <div className="flex items-start justify-between mb-1">
-        <div className="gb-stat-label">{label}</div>
-        <Icon size={14} strokeWidth={1.75} style={{ color: alert ? 'var(--error)' : 'var(--text-faint)' }} />
+    <div className="gb-stat-card gb-card-hover relative overflow-hidden">
+      <span className="absolute left-0 top-0 h-full w-[3px]" style={{ backgroundColor: t.bar }} />
+      <div className="flex items-center justify-between mb-3">
+        <div className="gb-stat-label" style={{ marginBottom: 0 }}>{label}</div>
+        <span className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: t.chip, color: t.fg }}>
+          <Icon size={16} strokeWidth={2} />
+        </span>
       </div>
-      <div className="gb-stat-value" style={alert ? { color: 'var(--error)' } : undefined}>
+      <div className="gb-stat-value" style={tone === 'error' && value !== 0 ? { color: 'var(--error)' } : undefined}>
         {value}
       </div>
+      {caption && <div className="gb-stat-delta">{caption}</div>}
     </div>
   );
 }
 
 function EmptyState({ icon: Icon, text }: { icon: any; text: string }) {
   return (
-    <div className="gb-card px-5 py-10 text-center text-[13px]" style={{ color: 'var(--text-faint)' }}>
-      <Icon size={20} strokeWidth={1.75} className="mx-auto mb-2" style={{ color: 'var(--success)' }} />
-      {text}
+    <div className="gb-card px-5 py-12 text-center mb-fade-in">
+      <div className="w-11 h-11 mx-auto mb-3 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'var(--success-bg)', color: 'var(--success)' }}>
+        <Icon size={20} strokeWidth={2} />
+      </div>
+      <p className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>{text}</p>
     </div>
   );
 }
@@ -632,11 +655,11 @@ function EmptyState({ icon: Icon, text }: { icon: any; text: string }) {
 function SLABar({ pct }: { pct: number }) {
   const color = pct > 100 ? 'var(--error)' : pct > 80 ? 'var(--warning)' : 'var(--success)';
   return (
-    <div className="inline-flex items-center gap-1.5">
-      <div className="w-12 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
-        <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: color }} />
+    <div className="inline-flex items-center gap-2 justify-end">
+      <div className="w-16 h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+        <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${Math.min(100, pct)}%`, background: `linear-gradient(90deg, ${color}, ${color})`, boxShadow: pct > 100 ? '0 0 6px var(--error)' : undefined }} />
       </div>
-      <span className="text-[11px] font-medium" style={{ color }}>{pct}%</span>
+      <span className="text-[11px] font-semibold tabular-nums" style={{ color, minWidth: 30, textAlign: 'right' }}>{pct}%</span>
     </div>
   );
 }
