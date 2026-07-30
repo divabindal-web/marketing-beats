@@ -40,6 +40,7 @@ import RequestModal from '@/components/design-ops/RequestModal';
 import DetailPanel from '@/components/design-ops/DetailPanel';
 import { useRole } from '@/components/layout/RoleContext';
 import { useCurrentUser } from '@/components/layout/CurrentUserContext';
+import { useViewAs } from '@/components/layout/ViewAsContext';
 import { currentDbUser } from '@/lib/work-api';
 import { supabase } from '@/lib/supabase';
 
@@ -55,8 +56,17 @@ const MAKER_IDS = SAMPLE_USERS.filter((u) => u.is_active).map((u) => u.id);
 export default function DashboardPage() {
   const { role } = useRole();
   const { currentUser } = useCurrentUser();
+  const { target: viewAsTarget } = useViewAs();
   const [requests, setRequests] = useState<Request[]>(SAMPLE_REQUESTS);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Effective identity for the personal view: the "view as" member when a
+  // lead/admin has one selected, else the signed-in user. Both id spaces
+  // (sample id + DB uuid) are included so the filter matches either.
+  const effectiveIds = viewAsTarget
+    ? ([viewAsTarget.id, viewAsTarget.sampleId].filter(Boolean) as string[])
+    : (currentUser?.id ? [currentUser.id] : []);
+  const effectiveName = viewAsTarget?.name ?? currentUser?.name ?? null;
 
   // Load persisted requests from Supabase on mount, and again whenever anyone
   // changes a request or moves a stage (live updates across all users).
@@ -175,8 +185,8 @@ export default function DashboardPage() {
         <IndividualDashboard
           requests={requests}
           onOpen={handleOpenRequest}
-          currentUserId={currentUser?.id ?? null}
-          currentUserName={currentUser?.name ?? null}
+          currentUserIds={effectiveIds}
+          currentUserName={effectiveName}
         />
       ) : (
         <ManagerDashboard requests={managerRequests} onOpen={handleOpenRequest} onUpdate={handleUpdateRequest} />
@@ -204,23 +214,24 @@ export default function DashboardPage() {
 function IndividualDashboard({
   requests,
   onOpen,
-  currentUserId,
+  currentUserIds,
   currentUserName,
 }: {
   requests: Request[];
   onOpen: (r: Request) => void;
-  currentUserId: string | null;
+  currentUserIds: string[];
   currentUserName: string | null;
 }) {
   const myRequests = useMemo(
-    () => (currentUserId
+    () => (currentUserIds.length
       ? requests.filter((r) =>
-          r.assigned_to === currentUserId ||
-          r.social_poc === currentUserId ||
-          r.video_poc === currentUserId ||
-          r.design_poc === currentUserId)
+          currentUserIds.some((id) =>
+            id === r.assigned_to ||
+            id === r.social_poc ||
+            id === r.video_poc ||
+            id === r.design_poc))
       : []),
-    [requests, currentUserId],
+    [requests, currentUserIds],
   );
 
   const pending = myRequests.filter((r) => !isFinal(r));

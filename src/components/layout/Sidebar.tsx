@@ -26,7 +26,8 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useRole } from './RoleContext';
 import { useCurrentUser } from './CurrentUserContext';
-import { getInitials } from '@/lib/sample-data';
+import { useViewAs, ViewAsTarget } from './ViewAsContext';
+import { getInitials, SAMPLE_USERS } from '@/lib/sample-data';
 
 interface NavItem {
   label: string;
@@ -131,23 +132,50 @@ export default function Sidebar() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showChangePwd, setShowChangePwd] = useState(false);
   const [canManage, setCanManage] = useState(false);
+  const { target: viewAsTarget, setTarget: setViewAsTarget } = useViewAs();
+  const [viewAsList, setViewAsList] = useState<ViewAsTarget[]>([]);
 
-  // Manager view is for leaders/admins only (users.is_lead or role=admin in the DB)
+  // Manager view is for leaders/admins only (users.is_lead or role=admin in the DB).
+  // The same roles get a "View as member" picker: admins can view as anyone,
+  // leads only as their own team.
   useEffect(() => {
     if (!email) return;
     let active = true;
-    supabase
-      .from('users')
-      .select('is_lead, role')
-      .ilike('email', email)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!active) return;
-        const ok = !!data && (data.is_lead === true || data.role === 'admin');
-        setCanManage(ok);
-        // Leads & Divya land on the team (manager) view; members are always individual
-        setRole(ok ? 'manager' : 'individual');
-      });
+    (async () => {
+      const { data: meRow } = await supabase
+        .from('users')
+        .select('is_lead, role, team')
+        .ilike('email', email)
+        .maybeSingle();
+      if (!active) return;
+      const isAdmin = meRow?.role === 'admin';
+      const ok = !!meRow && (meRow.is_lead === true || isAdmin);
+      setCanManage(ok);
+      // Leads & Divya land on the team (manager) view; members are always individual
+      setRole(ok ? 'manager' : 'individual');
+      if (!ok) { setViewAsList([]); return; }
+
+      let q = supabase
+        .from('users')
+        .select('id, name, email, team, is_active')
+        .eq('is_active', true)
+        .order('name');
+      if (!isAdmin && meRow?.team) q = q.eq('team', meRow.team);
+      const { data: members } = await q;
+      if (!active) return;
+      const list: ViewAsTarget[] = (members ?? [])
+        .filter((u) => u.email && u.email.toLowerCase() !== email.toLowerCase())
+        .map((u) => ({
+          id: u.id as string,
+          sampleId: SAMPLE_USERS.find(
+            (s) => (s.email ?? '').toLowerCase() === (u.email as string).toLowerCase(),
+          )?.id,
+          name: u.name as string,
+          email: (u.email as string).toLowerCase(),
+          team: (u.team as string | null) ?? null,
+        }));
+      setViewAsList(list);
+    })();
     return () => { active = false; };
   }, [email, setRole]);
 
@@ -220,6 +248,31 @@ export default function Sidebar() {
           </div>
         </button>
       </div>
+      )}
+
+      {/* View as a specific member — CMO (any member) / lead (own team). A view
+          filter only: My Tasks + personal dashboard reflect the chosen member. */}
+      {canManage && viewAsList.length > 0 && (
+        <div className="px-4 mb-3">
+          <label className="text-[10px] font-medium uppercase tracking-wider block mb-1" style={{ color: 'var(--text-faint)' }}>
+            View as member
+          </label>
+          <select
+            value={viewAsTarget?.id ?? ''}
+            onChange={(e) => {
+              const t = viewAsList.find((u) => u.id === e.target.value) ?? null;
+              setViewAsTarget(t);
+            }}
+            className="w-full input-base text-[13px]"
+          >
+            <option value="">— Myself —</option>
+            {viewAsList.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}{u.team ? ` (${u.team})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
       {/* Navigation */}

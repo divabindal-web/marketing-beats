@@ -6,6 +6,7 @@ import { CalendarClock, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { currentDbUser } from '@/lib/work-api';
 import { useRequestsRealtime } from '@/lib/use-requests-realtime';
+import { useViewAs } from '@/components/layout/ViewAsContext';
 
 interface Row {
   id: string; title: string; type: string; entity: string | null;
@@ -21,16 +22,19 @@ export default function MyTasksPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
 
+  const { target } = useViewAs();
   const load = useCallback(async () => {
     try {
       const me = await currentDbUser();
-      if (!me) { setErr('Your login is not linked to a team member record.'); setLoading(false); return; }
-      // "Mine" = I own it (assigned_to) OR I'm a point of contact on it
-      // (social / video / design POC). Any of these should surface here.
+      // When a lead/admin is "viewing as" a member, show that member's tasks.
+      const effId = target?.id ?? me?.id;
+      if (!effId) { setErr('Your login is not linked to a team member record.'); setLoading(false); return; }
+      // "Mine" = owned (assigned_to) OR a point of contact (social / video /
+      // design POC). Any of these should surface here.
       const { data, error } = await supabase
         .from('requests')
         .select('id, title, type, entity, current_stage, need_by, requestor_name')
-        .or(`assigned_to.eq.${me.id},social_poc.eq.${me.id},video_poc.eq.${me.id},design_poc.eq.${me.id}`)
+        .or(`assigned_to.eq.${effId},social_poc.eq.${effId},video_poc.eq.${effId},design_poc.eq.${effId}`)
         .order('need_by', { ascending: true });
       if (error) throw error;
       setRows((data as Row[]) ?? []);
@@ -39,7 +43,7 @@ export default function MyTasksPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [target]);
   // Load on mount, and live-refresh when anyone changes a request or stage.
   useEffect(() => { load(); }, [load]);
   useRequestsRealtime(load);

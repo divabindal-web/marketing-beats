@@ -5,7 +5,31 @@ import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { RoleProvider } from './RoleContext';
 import { CurrentUserProvider } from './CurrentUserContext';
+import { ViewAsProvider, useViewAs } from './ViewAsContext';
 import { supabase } from '@/lib/supabase';
+
+function ViewAsBanner() {
+  const { target, setTarget } = useViewAs();
+  if (!target) return null;
+  return (
+    <div
+      className="flex items-center justify-center gap-3 px-4 py-2 text-[12.5px] font-medium"
+      style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
+    >
+      <span>
+        Viewing as <strong>{target.name}</strong>
+        {target.team ? ` · ${target.team}` : ''}
+      </span>
+      <button
+        onClick={() => setTarget(null)}
+        className="px-2 py-0.5 rounded text-[11px] font-semibold"
+        style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}
+      >
+        Exit
+      </button>
+    </div>
+  );
+}
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -57,20 +81,23 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
   return (
     <CurrentUserProvider>
       <RoleProvider>
-        <div className="flex min-h-screen" style={{ backgroundColor: 'var(--bg-primary)' }}>
-          <Sidebar />
+        <ViewAsProvider>
+          <div className="flex min-h-screen" style={{ backgroundColor: 'var(--bg-primary)' }}>
+            <Sidebar />
 
-          <div className="flex-1 flex flex-col ml-64">
-            {/* No onNewRequest prop → Topbar uses its own global modal that saves to the DB */}
-            <Topbar title={title} />
+            <div className="flex-1 flex flex-col ml-64">
+              {/* No onNewRequest prop → Topbar uses its own global modal that saves to the DB */}
+              <Topbar title={title} />
 
-            <main className="flex-1 mt-14">
-              <div className="max-w-[1200px] mx-auto px-10 py-10">
-                {children}
-              </div>
-            </main>
+              <main className="flex-1 mt-14">
+                <ViewAsBanner />
+                <div className="max-w-[1200px] mx-auto px-10 py-10">
+                  {children}
+                </div>
+              </main>
+            </div>
           </div>
-        </div>
+        </ViewAsProvider>
       </RoleProvider>
     </CurrentUserProvider>
   );
