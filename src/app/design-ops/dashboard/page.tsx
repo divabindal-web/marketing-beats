@@ -118,7 +118,7 @@ export default function DashboardPage() {
       assigned_to: newRequest.assigned_to,
       social_poc: newRequest.social_poc,
       video_poc: newRequest.video_poc,
-      upload_poc: newRequest.upload_poc,
+      design_poc: newRequest.design_poc,
       shoot_date: newRequest.shoot_date,
       revisions: newRequest.revisions || 0,
       created_at: newRequest.created_at || nowIso,
@@ -209,7 +209,13 @@ function IndividualDashboard({
   currentUserName: string | null;
 }) {
   const myRequests = useMemo(
-    () => (currentUserId ? requests.filter((r) => r.assigned_to === currentUserId) : []),
+    () => (currentUserId
+      ? requests.filter((r) =>
+          r.assigned_to === currentUserId ||
+          r.social_poc === currentUserId ||
+          r.video_poc === currentUserId ||
+          r.design_poc === currentUserId)
+      : []),
     [requests, currentUserId],
   );
 

@@ -55,7 +55,7 @@ export interface Request {
   assigned_to?: string;
   social_poc?: string;
   video_poc?: string;
-  upload_poc?: string;
+  design_poc?: string;
   /** Social media upload links — filled once the content is published. */
   youtube_link?: string;
   instagram_link?: string;

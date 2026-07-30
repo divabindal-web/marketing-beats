@@ -33,7 +33,7 @@ CREATE TABLE requests (
   assigned_to UUID REFERENCES users(id),
   social_poc UUID REFERENCES users(id),
   video_poc UUID REFERENCES users(id),
-  upload_poc UUID REFERENCES users(id),
+  design_poc UUID REFERENCES users(id),
   shoot_date DATE,
   revisions INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now(),

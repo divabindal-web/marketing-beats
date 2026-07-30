@@ -61,7 +61,7 @@ type DbRequestRow = {
   requestor_id: string | null; entity: string | null; need_by: string;
   reference_link: string | null; current_stage: RequestStage;
   assigned_to: string | null; social_poc: string | null; video_poc: string | null;
-  upload_poc: string | null; shoot_date: string | null; revisions: number;
+  design_poc: string | null; shoot_date: string | null; revisions: number;
   project_id: string | null;
   created_at: string; updated_at: string;
 };
@@ -100,7 +100,7 @@ function rowToRequest(
     assigned_to: u2ui(toUi, row.assigned_to),
     social_poc: u2ui(toUi, row.social_poc),
     video_poc: u2ui(toUi, row.video_poc),
-    upload_poc: u2ui(toUi, row.upload_poc),
+    design_poc: u2ui(toUi, row.design_poc),
     shoot_date: row.shoot_date ?? undefined,
     project_id: row.project_id ?? undefined,
     revisions: row.revisions ?? 0,
@@ -125,7 +125,7 @@ function requestToRow(req: Request | Partial<Request>, toDb: Map<string, string>
     assigned_to: u2db(toDb, req.assigned_to),
     social_poc: u2db(toDb, req.social_poc),
     video_poc: u2db(toDb, req.video_poc),
-    upload_poc: u2db(toDb, req.upload_poc),
+    design_poc: u2db(toDb, req.design_poc),
     shoot_date: req.shoot_date ?? null,
     project_id: (req as { project_id?: string }).project_id ?? null,
     revisions: req.revisions ?? 0,

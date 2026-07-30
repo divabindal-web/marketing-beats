@@ -25,10 +25,12 @@ export default function MyTasksPage() {
       try {
         const me = await currentDbUser();
         if (!me) { setErr('Your login is not linked to a team member record.'); setLoading(false); return; }
+        // "Mine" = I own it (assigned_to) OR I'm a point of contact on it
+        // (social / video / design POC). Any of these should surface here.
         const { data, error } = await supabase
           .from('requests')
           .select('id, title, type, entity, current_stage, need_by, requestor_name')
-          .eq('assigned_to', me.id)
+          .or(`assigned_to.eq.${me.id},social_poc.eq.${me.id},video_poc.eq.${me.id},design_poc.eq.${me.id}`)
           .order('need_by', { ascending: true });
         if (error) throw error;
         setRows((data as Row[]) ?? []);
@@ -59,7 +61,7 @@ export default function MyTasksPage() {
     <div>
       <div className="gb-page-header">
         <h1 className="gb-page-title">My Tasks</h1>
-        <p className="gb-page-description">Everything assigned to you, from the live database.</p>
+        <p className="gb-page-description">Everything assigned to you or where you&apos;re a point of contact, from the live database.</p>
       </div>
 
       <div className="gb-tabs mb-5">

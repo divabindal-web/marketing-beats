@@ -589,11 +589,11 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
 
               <div>
                 <label className="text-[11px] font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
-                  Upload POC
+                  Design POC
                 </label>
                 <select
-                  value={request.upload_poc || ''}
-                  onChange={(e) => handleFieldChange('upload_poc', e.target.value)}
+                  value={request.design_poc || ''}
+                  onChange={(e) => handleFieldChange('design_poc', e.target.value)}
                   className="w-full input-base text-sm"
                   disabled={!canAssign}
                 >
