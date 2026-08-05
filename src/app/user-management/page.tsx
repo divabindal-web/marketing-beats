@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { DbUserRow, TEAMS, addDbUser, currentDbUser, deleteDbUser, listDbUsers, updateDbUser } from '@/lib/work-api';
 import { Search, Trash2, UserPlus, X } from 'lucide-react';
 
@@ -62,14 +63,20 @@ function AddMemberModal({ isOpen, onClose, onAdded, lockTeam }: AddMemberModalPr
     }
   };
 
-  return (
+  // Portalled to <body> so it always covers the viewport, never confined to a
+  // transformed/animated ancestor (which pushed it below the fold before).
+  return createPortal(
     <>
       {/* Overlay Backdrop */}
-      <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-40" onClick={onClose} />
+      <div
+        className="fixed inset-0 backdrop-blur-sm z-[100]"
+        style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+        onClick={onClose}
+      />
 
       {/* Modal Card */}
-      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
-        <div className="gb-card w-full max-w-md max-h-[90vh] overflow-y-auto shadow-xl">
+      <div className="fixed inset-0 flex items-center justify-center z-[101] p-4">
+        <div className="gb-card w-full max-w-md max-h-[90vh] overflow-y-auto shadow-xl mb-scale-in">
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
             <h2 className="text-xl font-semibold text-[var(--text-primary)]">Add Member</h2>
@@ -168,7 +175,8 @@ function AddMemberModal({ isOpen, onClose, onAdded, lockTeam }: AddMemberModalPr
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
 

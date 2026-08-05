@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { Request, RequestType, REQUESTED_BY_OPTIONS, REQUEST_TYPES, StageTransition, ENTITIES, Entity } from '@/types';
 import { getStagesForType } from '@/lib/sample-data';
@@ -171,17 +172,18 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
 
   const isSubmitDisabled = !formData.title.trim() || !formData.needBy;
 
-  return (
+  return createPortal(
     <>
       {/* Overlay Backdrop */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-40"
+        className="fixed inset-0 backdrop-blur-sm z-[100]"
+        style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
         onClick={onClose}
       />
 
       {/* Modal Card */}
-      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
-        <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
+      <div className="fixed inset-0 flex items-center justify-center z-[101] p-4">
+        <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl mb-scale-in">
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
             <h2 className="text-xl font-semibold text-[var(--text-primary)]">
@@ -364,6 +366,7 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
