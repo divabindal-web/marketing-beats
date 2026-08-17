@@ -12,6 +12,7 @@
  */
 import { supabase } from '@/lib/supabase';
 import { SAMPLE_USERS } from '@/lib/sample-data';
+import { currentDbUser } from '@/lib/work-api';
 import { Request, RequestStage, StageTransition } from '@/types';
 
 /* ---------------- user id bridge (sample id ⇄ db uuid, via email) -------- */
@@ -63,6 +64,8 @@ type DbRequestRow = {
   assigned_to: string | null; social_poc: string | null; video_poc: string | null;
   design_poc: string | null; shoot_date: string | null; revisions: number;
   project_id: string | null;
+  youtube_link: string | null; instagram_link: string | null;
+  linkedin_link: string | null; pinterest_link: string | null;
   created_at: string; updated_at: string;
 };
 type DbTransitionRow = {
@@ -103,6 +106,11 @@ function rowToRequest(
     design_poc: u2ui(toUi, row.design_poc),
     shoot_date: row.shoot_date ?? undefined,
     project_id: row.project_id ?? undefined,
+    entity: (row.entity as Request['entity']) ?? undefined,
+    youtube_link: row.youtube_link ?? undefined,
+    instagram_link: row.instagram_link ?? undefined,
+    linkedin_link: row.linkedin_link ?? undefined,
+    pinterest_link: row.pinterest_link ?? undefined,
     revisions: row.revisions ?? 0,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -129,6 +137,10 @@ function requestToRow(req: Request | Partial<Request>, toDb: Map<string, string>
     shoot_date: req.shoot_date ?? null,
     project_id: (req as { project_id?: string }).project_id ?? null,
     revisions: req.revisions ?? 0,
+    youtube_link: req.youtube_link ?? null,
+    instagram_link: req.instagram_link ?? null,
+    linkedin_link: req.linkedin_link ?? null,
+    pinterest_link: req.pinterest_link ?? null,
   };
 }
 
@@ -164,12 +176,16 @@ export async function createRequest(req: Request): Promise<Request> {
   if (error) throw error;
   const row = data as DbRequestRow;
   const first = req.transitions?.[0];
+  // Attribute the move to whoever is signed in. Callers used to pass the
+  // assignee (or a hardcoded id), which made the audit log credit the wrong
+  // person for every transition.
+  const actor = (await currentDbUser())?.id ?? u2db(toDb, req.requestor_id);
   const { data: trData, error: trError } = await supabase
     .from('stage_transitions')
     .insert({
       request_id: row.id,
       stage: first?.to_stage ?? row.current_stage,
-      transitioned_by: u2db(toDb, first?.transitioned_by ?? req.requestor_id),
+      transitioned_by: actor,
     })
     .select();
   if (trError) throw trError;
@@ -196,12 +212,14 @@ export async function updateRequest(req: Request): Promise<void> {
   if (cntErr) throw cntErr;
   const tail = (req.transitions ?? []).slice(count ?? 0);
   if (tail.length) {
+    // Same rule as createRequest: the log records who actually acted.
+    const actor = (await currentDbUser())?.id ?? null;
     const { error: insErr } = await supabase.from('stage_transitions').insert(
       tail.map((t) => ({
         request_id: req.id,
         stage: t.to_stage,
         transitioned_at: t.transitioned_at,
-        transitioned_by: u2db(toDb, t.transitioned_by),
+        transitioned_by: actor ?? u2db(toDb, t.transitioned_by),
       })),
     );
     if (insErr) throw insErr;

@@ -68,6 +68,20 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
     })();
   }, [isOpen]);
 
+  // While the modal is up: Escape closes it, and the page behind stops
+  // scrolling so the wheel acts on the form, not the dashboard underneath.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen, onClose]);
+
   const [formData, setFormData] = useState({
     type: 'Graphics' as RequestType,
     requestedBy: 'Social Team' as const,
@@ -183,9 +197,12 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
 
       {/* Modal Card */}
       <div className="fixed inset-0 flex items-center justify-center z-[101] p-4">
-        <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl mb-scale-in">
+        {/* Column layout: the header and the action bar stay put, only the
+            field list scrolls. Before this the whole card scrolled, which
+            pushed Submit/Cancel below the fold on any laptop-height screen. */}
+        <div className="card w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-xl mb-scale-in">
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
+          <div className="flex-shrink-0 flex items-center justify-between p-6 border-b border-[var(--border)]">
             <h2 className="text-xl font-semibold text-[var(--text-primary)]">
               New Design Request
             </h2>
@@ -198,8 +215,10 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
             </button>
           </div>
 
-          {/* Body */}
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Body + actions live in one <form> so Enter submits and the
+              buttons are genuinely associated with it. */}
+          <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
             {/* Type */}
             <div>
               <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
@@ -342,18 +361,19 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
                 className="w-full input-base"
               />
             </div>
-          </form>
+            </div>
 
           {/* Footer */}
-          <div className="flex gap-3 p-6 border-t border-[var(--border)] bg-[var(--bg-secondary)]">
+          <div className="flex-shrink-0 flex gap-3 p-6 border-t border-[var(--border)] bg-[var(--bg-secondary)]">
             <button
+              type="button"
               onClick={onClose}
               className="flex-1 px-4 py-2 rounded-md border border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors font-medium"
             >
               Cancel
             </button>
             <button
-              onClick={handleSubmit}
+              type="submit"
               disabled={isSubmitDisabled}
               className={`flex-1 px-4 py-2 rounded-md text-[var(--on-accent)] font-semibold transition-all active:scale-[0.98] ${
                 isSubmitDisabled
@@ -364,6 +384,7 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
               Submit
             </button>
           </div>
+          </form>
         </div>
       </div>
     </>,

@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, AlertTriangle, CheckCircle2, ChevronRight, Inbox } from 'lucide-react';
 import { Request } from '@/types';
 import { fetchRequests, updateRequest } from '@/lib/requests-api';
-import { SAMPLE_USERS, formatDate, getDaysUntilDue } from '@/lib/sample-data';
+import { formatDate, getDaysUntilDue } from '@/lib/sample-data';
+import { useDirectory } from '@/lib/directory';
 import { useRequestsRealtime } from '@/lib/use-requests-realtime';
 import { useCurrentUser } from '@/components/layout/CurrentUserContext';
 import { useViewAs } from '@/components/layout/ViewAsContext';
@@ -22,6 +23,7 @@ const stagePill = (stage: string, overdue: boolean): string => {
 
 export default function MyTasksPage() {
   const { currentUser } = useCurrentUser();
+  const directory = useDirectory();
   const { target } = useViewAs();
   const [requests, setRequests] = useState<Request[]>([]);
   const [tab, setTab] = useState<Tab>('upcoming');
@@ -191,7 +193,7 @@ export default function MyTasksPage() {
       {selected && (
         <DetailPanel
           request={selected}
-          users={SAMPLE_USERS}
+          users={directory}
           isOpen={panelOpen}
           onClose={() => { setPanelOpen(false); setSelected(null); }}
           onUpdate={handleUpdate}

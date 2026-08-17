@@ -19,8 +19,6 @@ import {
 } from 'lucide-react';
 import {
   SAMPLE_USERS,
-  SAMPLE_REQUESTS,
-  getUserById,
   getStagesForType,
   isFinal,
   isOverdue,
@@ -28,6 +26,7 @@ import {
   formatDate,
   getDaysUntilDue,
 } from '@/lib/sample-data';
+import { DirectoryUser, findInDirectory, useDirectory } from '@/lib/directory';
 import { Request, RequestType } from '@/types';
 import {
   getDeliveryTAT,
@@ -48,16 +47,17 @@ import { supabase } from '@/lib/supabase';
 /*  Shared helpers                                                     */
 /* ------------------------------------------------------------------ */
 
-// Team roster — anyone who can have work assigned to them shows up in the
-// manager's workload table. We derive this from SAMPLE_USERS so new joiners
-// show up automatically.
-const MAKER_IDS = SAMPLE_USERS.filter((u) => u.is_active).map((u) => u.id);
-
 export default function DashboardPage() {
   const { role } = useRole();
   const { currentUser } = useCurrentUser();
   const { target: viewAsTarget } = useViewAs();
-  const [requests, setRequests] = useState<Request[]>(SAMPLE_REQUESTS);
+  // Live people list. Previously the manager views derived their roster from
+  // SAMPLE_USERS, so anyone added through User Management was missing from the
+  // workload table and rendered as "Unassigned" everywhere else.
+  const directory = useDirectory();
+  // Start empty, not with SAMPLE_REQUESTS — the sample rows flashed up as real
+  // data for a moment on every load.
+  const [requests, setRequests] = useState<Request[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Effective identity for the personal view: the "view as" member when a
@@ -124,6 +124,9 @@ export default function DashboardPage() {
       requested_by: newRequest.requested_by || 'Social Team',
       title: newRequest.title || '',
       description: newRequest.description,
+      // entity was being dropped here, so every saved request landed with
+      // entity = null and the SQY/INCO/UM/AZURO split reported nothing.
+      entity: newRequest.entity,
       requestor_name: newRequest.requestor_name || '',
       requestor_id: newRequest.requestor_id,
       need_by: newRequest.need_by || '',
@@ -187,16 +190,17 @@ export default function DashboardPage() {
           onOpen={handleOpenRequest}
           currentUserIds={effectiveIds}
           currentUserName={effectiveName}
+          directory={directory}
         />
       ) : (
-        <ManagerDashboard requests={managerRequests} onOpen={handleOpenRequest} onUpdate={handleUpdateRequest} />
+        <ManagerDashboard requests={managerRequests} onOpen={handleOpenRequest} onUpdate={handleUpdateRequest} directory={directory} />
       )}
 
       <RequestModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveRequest} />
       {selectedRequest && (
         <DetailPanel
           request={selectedRequest}
-          users={SAMPLE_USERS}
+          users={directory}
           isOpen={isPanelOpen}
           onClose={() => { setIsPanelOpen(false); setSelectedRequest(null); }}
           onUpdate={handleUpdateRequest}
@@ -216,11 +220,13 @@ function IndividualDashboard({
   onOpen,
   currentUserIds,
   currentUserName,
+  directory,
 }: {
   requests: Request[];
   onOpen: (r: Request) => void;
   currentUserIds: string[];
   currentUserName: string | null;
+  directory: DirectoryUser[];
 }) {
   const myRequests = useMemo(
     () => (currentUserIds.length
@@ -233,6 +239,21 @@ function IndividualDashboard({
       : []),
     [requests, currentUserIds],
   );
+
+  // Work you raised for someone else. Kept out of the SLA/TAT figures above —
+  // those are about your own queue — but a lead who assigns work all day had no
+  // way to see it here at all, so it looked like their requests had vanished.
+  const raisedByMe = useMemo(
+    () => (currentUserIds.length
+      ? requests.filter(
+          (r) =>
+            currentUserIds.some((id) => id === r.requestor_id) &&
+            !myRequests.some((m) => m.id === r.id),
+        )
+      : []),
+    [requests, currentUserIds, myRequests],
+  );
+  const raisedOpen = raisedByMe.filter((r) => !isFinal(r));
 
   const pending = myRequests.filter((r) => !isFinal(r));
   const completed = myRequests.filter((r) => isFinal(r));
@@ -271,11 +292,12 @@ function IndividualDashboard({
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 mb-stagger">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8 mb-stagger">
         <StatCard label="My pending" value={pending.length} icon={Clock} tone="brand" />
         <StatCard label="Completed" value={completed.length} icon={CheckCircle2} tone="success" />
         <StatCard label="Overdue" value={overdue.length} icon={AlertCircle} tone={overdue.length > 0 ? 'error' : 'neutral'} />
         <StatCard label="Near SLA" value={breachingSLA.length} icon={AlertTriangle} tone={breachingSLA.length > 0 ? 'warning' : 'neutral'} />
+        <StatCard label="Raised by you" value={raisedOpen.length} icon={ArrowRight} tone="neutral" caption={raisedByMe.length ? `${raisedByMe.length} total` : undefined} />
       </div>
 
       {/* Priority work queue */}
@@ -330,6 +352,50 @@ function IndividualDashboard({
         )}
       </section>
 
+      {/* Work you raised for other people */}
+      {raisedByMe.length > 0 && (
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="gb-section-title" style={{ marginBottom: 0 }}>Raised by you</h2>
+            <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
+              {raisedOpen.length} open · {raisedByMe.length - raisedOpen.length} done
+            </span>
+          </div>
+          <div className="gb-card overflow-hidden">
+            <table className="gb-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Assigned to</th>
+                  <th>Stage</th>
+                  <th>Need By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {raisedByMe.slice(0, 10).map((req) => {
+                  const assignee = findInDirectory(directory, req.assigned_to);
+                  const isOvd = isOverdue(req);
+                  return (
+                    <tr key={req.id} onClick={() => onOpen(req)} style={{ cursor: 'pointer' }}>
+                      <td style={{ fontWeight: 500, color: 'var(--accent)' }}>{req.title}</td>
+                      <td style={{ color: 'var(--text-secondary)' }}>{assignee?.name ?? 'Unassigned'}</td>
+                      <td>
+                        <span className={`gb-badge ${isFinal(req) ? 'gb-badge-green' : isOvd ? 'gb-badge-red' : 'gb-badge-blue'}`}>
+                          {req.current_stage}
+                        </span>
+                      </td>
+                      <td style={{ color: isOvd ? 'var(--error)' : 'var(--text-secondary)' }}>
+                        {formatDate(req.need_by)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {/* TAT breaches */}
       {breachingSLA.length > 0 && (
         <section>
@@ -380,10 +446,12 @@ function ManagerDashboard({
   requests,
   onOpen,
   onUpdate,
+  directory,
 }: {
   requests: Request[];
   onOpen: (r: Request) => void;
   onUpdate: (r: Request) => void;
+  directory: DirectoryUser[];
 }) {
   const totalRequests = requests.length;
   const completedRequests = requests.filter((r) => isFinal(r)).length;
@@ -394,11 +462,12 @@ function ManagerDashboard({
   const deliveredTATs = requests.map((r) => getDeliveryTAT(r.transitions, r.type)).filter((t): t is number => t !== null);
   const avgTAT = deliveredTATs.length ? Math.round((deliveredTATs.reduce((a, b) => a + b, 0) / deliveredTATs.length) * 10) / 10 : 0;
 
-  // Per-member performance
+  // Per-member performance. Roster comes from the live directory, so members
+  // added through User Management appear here instead of silently vanishing.
   const memberPerf = useMemo(() => {
-    return MAKER_IDS.map((uid) => {
-      const user = getUserById(uid);
-      const userReqs = requests.filter((r) => r.assigned_to === uid);
+    return directory.filter((u) => u.is_active).map((user) => {
+      const uid = user.id;
+      const userReqs = requests.filter((r) => r.assigned_to === uid || r.assigned_to === user.db_id);
       const pending = userReqs.filter((r) => !isFinal(r));
       const completed = userReqs.filter((r) => isFinal(r));
       const overdueCount = pending.filter((r) => isOverdue(r)).length;
@@ -425,7 +494,7 @@ function ManagerDashboard({
       };
     }).filter((m) => m.total > 0)
       .sort((a, b) => b.overdue - a.overdue || b.breaching - a.breaching);
-  }, [requests]);
+  }, [requests, directory]);
 
   const overdueList = requests.filter((r) => isOverdue(r)).sort((a, b) => new Date(a.need_by).getTime() - new Date(b.need_by).getTime()).slice(0, 8);
   const changeRequestsList = requests.filter((r) => r.current_stage === 'Change Req').slice(0, 5);
@@ -545,7 +614,7 @@ function ManagerDashboard({
                 <tbody>
                   {overdueList.map((req) => {
                     const daysOver = Math.abs(getDaysUntilDue(req.need_by));
-                    const assignee = getUserById(req.assigned_to);
+                    const assignee = findInDirectory(directory, req.assigned_to);
                     return (
                       <tr key={req.id} onClick={() => onOpen(req)} style={{ cursor: 'pointer' }}>
                         <td style={{ color: 'var(--accent)', fontWeight: 500 }}>{req.title}</td>
@@ -576,7 +645,7 @@ function ManagerDashboard({
                 </thead>
                 <tbody>
                   {changeRequestsList.map((req) => {
-                    const assignee = getUserById(req.assigned_to);
+                    const assignee = findInDirectory(directory, req.assigned_to);
                     return (
                       <tr key={req.id} onClick={() => onOpen(req)} style={{ cursor: 'pointer' }}>
                         <td style={{ color: 'var(--accent)', fontWeight: 500 }}>{req.title}</td>

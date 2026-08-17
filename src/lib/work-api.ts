@@ -197,19 +197,56 @@ export async function deleteDbUser(id: string): Promise<void> {
   }
   if (!data || data.length === 0) throw new Error('Delete not permitted.');
 }
-export async function addDbUser(u: { name: string; email: string; team?: string; role?: string; designation?: string }) {
-  // Fail with a clear message if the session has expired (otherwise the insert
-  // is rejected by row-level security and the reason is invisible to the user).
+/**
+ * Add a member — profile row AND a sign-in account.
+ *
+ * This used to insert into `users` only. Creating the auth account needs the
+ * service_role key, which cannot live in the browser, so five people (one of
+ * them a team lead) ended up with a profile they could never log in to. The
+ * `admin-users` edge function does both halves with the caller's own
+ * permissions and hands back a one-time password to pass on.
+ */
+export async function addDbUser(u: { name: string; email: string; team?: string; role?: string; designation?: string }): Promise<{ email: string; password: string }> {
   const { data: auth } = await supabase.auth.getSession();
   if (!auth.session) throw new Error('Your session has expired — please sign in again.');
-  const { error } = await supabase.from('users').insert({
-    employee_code: 'NEW-' + Date.now().toString(36).toUpperCase(),
-    name: u.name, email: u.email.trim().toLowerCase(), team: u.team ?? null,
-    role: u.role ?? 'designer', designation: u.designation ?? null, is_active: true,
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    body: {
+      action: 'create_member',
+      name: u.name,
+      email: u.email.trim().toLowerCase(),
+      team: u.team ?? null,
+      role: u.role ?? 'designer',
+      designation: u.designation ?? null,
+    },
+  });
+  // functions.invoke surfaces non-2xx as an error with the body tucked away,
+  // so dig the real message out rather than showing "Edge Function returned a
+  // non-2xx status code".
+  if (error) {
+    let msg = error.message ?? 'Could not add member';
+    const res = (error as { context?: Response }).context;
+    if (res && typeof res.json === 'function') {
+      try { msg = (await res.json())?.error ?? msg; } catch { /* keep msg */ }
+    }
+    throw new Error(msg);
+  }
+  if (data?.error) throw new Error(data.error as string);
+  return { email: data.email as string, password: data.password as string };
+}
+
+/** Set a member's password. Admins anywhere; leads within their own team. */
+export async function resetMemberPassword(email: string, password?: string): Promise<{ email: string; password: string }> {
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    body: { action: 'reset_password', email, password },
   });
   if (error) {
-    const e = error as { code?: string; message?: string };
-    if (e.code === '23505') throw new Error('A member with this email already exists.');
-    throw new Error(e.message ?? 'Could not add member');
+    let msg = error.message ?? 'Could not reset the password';
+    const res = (error as { context?: Response }).context;
+    if (res && typeof res.json === 'function') {
+      try { msg = (await res.json())?.error ?? msg; } catch { /* keep msg */ }
+    }
+    throw new Error(msg);
   }
+  if (data?.error) throw new Error(data.error as string);
+  return { email: data.email as string, password: data.password as string };
 }

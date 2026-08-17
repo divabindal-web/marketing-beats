@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from 'react';
 import { Search, Key, CheckCircle2, AlertCircle, Loader2, Shield } from 'lucide-react';
-import { SAMPLE_USERS } from '@/lib/sample-data';
-import { supabase } from '@/lib/supabase';
+import { useDirectory } from '@/lib/directory';
+import { resetMemberPassword } from '@/lib/work-api';
 
 export default function ResetPasswordsPage() {
   const [search, setSearch] = useState('');
@@ -11,47 +11,35 @@ export default function ResetPasswordsPage() {
   const [newPwd, setNewPwd] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const users = useDirectory();
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return SAMPLE_USERS;
+    if (!search.trim()) return users;
     const q = search.toLowerCase();
-    return SAMPLE_USERS.filter(
+    return users.filter(
       (u) =>
         u.name.toLowerCase().includes(q) ||
         (u.email ?? '').toLowerCase().includes(q) ||
         u.employee_code.toLowerCase().includes(q),
     );
-  }, [search]);
+  }, [search, users]);
 
   const handleReset = async () => {
     if (!selectedUser || !newPwd) return;
-    const user = SAMPLE_USERS.find((u) => u.id === selectedUser);
+    const user = users.find((u) => u.id === selectedUser);
     if (!user?.email) return;
 
     setLoading(true);
     setResult(null);
-
     try {
-      // Use Supabase admin API via edge function or direct call
-      // For now, we use the client-side updateUser approach
-      // This requires the admin to know the target user's session
-      // In production, this would be a server action with service_role key
-
-      // Workaround: use the Supabase admin REST API directly
-      const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY; // Will use admin API
-
-      // Since we can't use service_role from client, we'll sign in as admin
-      // and use the admin endpoint. For the MVP, we'll call the Supabase
-      // admin API to list users and find the target user's UUID.
-
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-
-      // First find the user by email in Supabase auth
-      // We need the user's UUID to reset their password
-      // This is a simplified approach for the MVP
-      setResult({ ok: true, msg: `Password for ${user.name} has been queued for reset. In production, this uses the service_role key via a server endpoint. For now, please reset passwords from the Supabase Dashboard → Authentication → Users.` });
+      // Goes through the admin-users edge function, which holds the
+      // service_role key. This page used to just print a success message and
+      // change nothing at all.
+      await resetMemberPassword(user.email, newPwd);
+      setResult({ ok: true, msg: `Password updated for ${user.name}. Share it with them and ask them to change it from the sidebar.` });
+      setNewPwd('');
     } catch (err) {
-      setResult({ ok: false, msg: 'Failed to reset password.' });
+      setResult({ ok: false, msg: err instanceof Error ? err.message : 'Failed to reset password.' });
     } finally {
       setLoading(false);
     }
@@ -88,8 +76,8 @@ export default function ResetPasswordsPage() {
               <tr>
                 <th>Name</th>
                 <th>Email</th>
-                <th>Level</th>
-                <th>Location</th>
+                <th>Team</th>
+                <th>Role</th>
               </tr>
             </thead>
             <tbody>
@@ -106,8 +94,8 @@ export default function ResetPasswordsPage() {
                     {u.name}
                   </td>
                   <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{u.email}</td>
-                  <td><span className="gb-badge">{u.level}</span></td>
-                  <td style={{ color: 'var(--text-faint)', fontSize: '12px' }}>{u.location?.split(' - ')[0]}</td>
+                  <td><span className="gb-badge">{u.team ?? '—'}</span></td>
+                  <td style={{ color: 'var(--text-faint)', fontSize: '12px' }}>{u.role}</td>
                 </tr>
               ))}
             </tbody>
@@ -124,7 +112,7 @@ export default function ResetPasswordsPage() {
           {selectedUser ? (
             <div className="gb-card p-5">
               {(() => {
-                const user = SAMPLE_USERS.find((u) => u.id === selectedUser);
+                const user = users.find((u) => u.id === selectedUser);
                 if (!user) return null;
                 return (
                   <>
@@ -178,7 +166,7 @@ export default function ResetPasswordsPage() {
                     </button>
 
                     <div className="text-[11px] mt-3" style={{ color: 'var(--text-faint)' }}>
-                      You can also reset passwords directly from the Supabase Dashboard → Authentication → Users.
+                      Admins can reset anyone; team leads only their own team.
                     </div>
                   </>
                 );

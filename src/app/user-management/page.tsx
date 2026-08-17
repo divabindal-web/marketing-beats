@@ -7,6 +7,14 @@ import { Search, Trash2, UserPlus, X } from 'lucide-react';
 
 type EditablePatch = Partial<Pick<DbUserRow, 'role' | 'team' | 'is_lead' | 'is_active' | 'designation'>>;
 
+/** Roles the app understands. `admin` is the CMO-level global master. */
+const USER_ROLES = [
+  { value: 'designer', label: 'Designer' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'viewer', label: 'Viewer' },
+  { value: 'admin', label: 'Admin' },
+];
+
 function getInitials(name: string) {
   return name
     .split(' ')
@@ -30,6 +38,21 @@ function AddMemberModal({ isOpen, onClose, onAdded, lockTeam }: AddMemberModalPr
   const [form, setForm] = useState({ name: '', email: '', team: '', role: 'designer', designation: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Shown once after a successful add — the only time this password is visible.
+  const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
+
+  // Escape closes; the page behind stops scrolling while the modal is up.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -46,7 +69,7 @@ function AddMemberModal({ isOpen, onClose, onAdded, lockTeam }: AddMemberModalPr
     setSubmitting(true);
     setError(null);
     try {
-      await addDbUser({
+      const result = await addDbUser({
         name: form.name.trim(),
         email: form.email.trim(),
         team: lockTeam ?? (form.team.trim() || undefined),
@@ -55,7 +78,9 @@ function AddMemberModal({ isOpen, onClose, onAdded, lockTeam }: AddMemberModalPr
       });
       await onAdded();
       setForm({ name: '', email: '', team: '', role: 'designer', designation: '' });
-      onClose();
+      // Stay open so the one-time password can be copied — closing here would
+      // lose it, and there is no way to read it back afterwards.
+      setCreated(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add member');
     } finally {
@@ -76,9 +101,9 @@ function AddMemberModal({ isOpen, onClose, onAdded, lockTeam }: AddMemberModalPr
 
       {/* Modal Card */}
       <div className="fixed inset-0 flex items-center justify-center z-[101] p-4">
-        <div className="gb-card w-full max-w-md max-h-[90vh] overflow-y-auto shadow-xl mb-scale-in">
+        <div className="gb-card w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-xl mb-scale-in">
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
+          <div className="flex-shrink-0 flex items-center justify-between p-6 border-b border-[var(--border)]">
             <h2 className="text-xl font-semibold text-[var(--text-primary)]">Add Member</h2>
             <button
               onClick={onClose}
@@ -89,8 +114,9 @@ function AddMemberModal({ isOpen, onClose, onAdded, lockTeam }: AddMemberModalPr
             </button>
           </div>
 
-          {/* Body */}
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Body + actions in one <form>; only the field list scrolls. */}
+          <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
                 Name <span className="text-[var(--error)]">*</span>
@@ -141,6 +167,17 @@ function AddMemberModal({ isOpen, onClose, onAdded, lockTeam }: AddMemberModalPr
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">Role</label>
+              <select name="role" value={form.role} onChange={handleChange} className="w-full input-base">
+                {USER_ROLES.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">Designation</label>
               <input
                 type="text"
@@ -152,19 +189,45 @@ function AddMemberModal({ isOpen, onClose, onAdded, lockTeam }: AddMemberModalPr
               />
             </div>
 
+            <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+              A sign-in account is created too. You&apos;ll get a one-time password to
+              pass on — ask them to change it from the sidebar after first login.
+            </p>
+
+            {created && (
+              <div
+                className="rounded-md p-3"
+                style={{ backgroundColor: 'var(--success-bg)', border: '1px solid var(--success)' }}
+              >
+                <div className="text-[12px] font-semibold" style={{ color: 'var(--success)' }}>
+                  {created.email} can now sign in.
+                </div>
+                <div className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                  Temporary password — shown only now:
+                </div>
+                <code
+                  className="block mt-1 px-2 py-1.5 rounded text-[13px] font-semibold select-all"
+                  style={{ backgroundColor: 'var(--bg-code)', color: 'var(--text-primary)' }}
+                >
+                  {created.password}
+                </code>
+              </div>
+            )}
+
             {error && <p className="text-xs text-[var(--error)]">{error}</p>}
-          </form>
+            </div>
 
           {/* Footer */}
-          <div className="flex gap-3 p-6 border-t border-[var(--border)] bg-[var(--bg-secondary)]">
+          <div className="flex-shrink-0 flex gap-3 p-6 border-t border-[var(--border)] bg-[var(--bg-secondary)]">
             <button
-              onClick={onClose}
+              type="button"
+              onClick={() => { setCreated(null); setError(null); onClose(); }}
               className="flex-1 px-4 py-2 rounded-md border border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors font-medium"
             >
-              Cancel
+              {created ? 'Done' : 'Cancel'}
             </button>
             <button
-              onClick={handleSubmit}
+              type="submit"
               disabled={isDisabled}
               className={`flex-1 px-4 py-2 rounded-md text-[var(--on-accent)] font-semibold transition-all active:scale-[0.98] ${
                 isDisabled ? 'bg-[var(--accent)] opacity-50 cursor-not-allowed' : 'bg-[var(--accent)] hover:opacity-90'
@@ -173,6 +236,7 @@ function AddMemberModal({ isOpen, onClose, onAdded, lockTeam }: AddMemberModalPr
               {submitting ? 'Adding…' : 'Add member'}
             </button>
           </div>
+          </form>
         </div>
       </div>
     </>,
@@ -328,6 +392,7 @@ export default function UserManagementPage() {
               <th>Email</th>
               <th>Designation</th>
               <th>Team</th>
+              <th>Role</th>
               <th>Lead?</th>
               <th>Active</th>
               <th></th>
@@ -336,13 +401,13 @@ export default function UserManagementPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
                   Loading members…
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
                   No members match your search.
                 </td>
               </tr>
@@ -402,6 +467,20 @@ export default function UserManagementPage() {
                         </option>
                       ))}
                       {user.team && !TEAMS.includes(user.team) && <option value={user.team}>{user.team}</option>}
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={user.role ?? 'designer'}
+                      className="input-base"
+                      style={{ width: '120px', padding: '5px 8px', fontSize: '13px' }}
+                      onChange={(e) => void patchUser(user.id, { role: e.target.value })}
+                    >
+                      {USER_ROLES.map((r) => (
+                        <option key={r.value} value={r.value}>
+                          {r.label}
+                        </option>
+                      ))}
                     </select>
                   </td>
                   <td>

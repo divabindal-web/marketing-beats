@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { X, CheckCircle, Circle, ChevronRight, ExternalLink, Link2, Trash2 } from 'lucide-react';
-import { Request, User, StageTransition, getTATCategoriesForType } from '@/types';
+import { Request, StageTransition, getTATCategoriesForType } from '@/types';
 import { getStagesForType, isOverdue } from '@/lib/sample-data';
+import { DirectoryUser } from '@/lib/directory';
 import { getStageBreakdown, formatBusinessHours } from '@/lib/tat';
 import {
   Subtask,
@@ -37,7 +38,8 @@ function formatCommentDate(iso: string): string {
 
 interface DetailPanelProps {
   request: Request;
-  users: User[];
+  /** Live people directory (see src/lib/directory.ts), not the sample list. */
+  users: DirectoryUser[];
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (updated: Request) => void;
@@ -88,7 +90,10 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
     return () => { cancelled = true; };
   }, []);
 
-  const teamOf = (u?: User) => (u?.email ? teamByEmail.get(u.email.toLowerCase()) ?? null : null);
+  // Team comes straight off the directory row; the email map is only a
+  // fallback for anyone the directory hasn't loaded yet.
+  const teamOf = (u?: DirectoryUser) =>
+    u?.team ?? (u?.email ? teamByEmail.get(u.email.toLowerCase()) ?? null : null);
 
   const canDelete = !!me && (me.is_lead || me.role === 'admin');
   const canAssign = canDelete;
@@ -225,8 +230,10 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
   // leads of other teams cannot complete a task.
   const isFinalStage = (s: string) => s === 'Done' || s === 'Uploaded';
   const assigneeTeam = teamOf(users.find((u) => u.id === request.assigned_to));
+  // Unknown assignee team used to mean "allow", which let any lead complete
+  // another team's work. Now an unresolved team blocks instead of permitting.
   const canMarkComplete =
-    !!me && (me.role === 'admin' || (me.is_lead && (!assigneeTeam || assigneeTeam === me.team)));
+    !!me && (me.role === 'admin' || (me.is_lead && !!assigneeTeam && assigneeTeam === me.team));
   const completeBlockedMsg = 'Only the team lead or CMO can mark a task complete.';
 
   // POC dropdowns are scoped to the relevant team: Social POC -> Social team,

@@ -8,15 +8,13 @@ import { currentDbUser, userTeamByEmail, deleteRequestById } from '@/lib/work-ap
 import { List, Columns3, CalendarDays, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { Request, RequestType } from '@/types';
 import {
-  SAMPLE_REQUESTS,
-  SAMPLE_USERS,
-  getUserById,
   formatDate,
   getInitials,
   isOverdue,
   getDaysUntilDue,
   getStagesForType,
 } from '@/lib/sample-data';
+import { findInDirectory, useDirectory } from '@/lib/directory';
 import {
   getDeliveryTAT,
   calculateActiveTAT,
@@ -30,7 +28,9 @@ type SortField = 'need_by' | 'created_at' | null;
 
 function AllRequestsPageInner() {
   const searchParams = useSearchParams();
-  const [requests, setRequests] = useState<Request[]>(SAMPLE_REQUESTS);
+  const [requests, setRequests] = useState<Request[]>([]);
+  // Live people list — see src/lib/directory.ts for why SAMPLE_USERS is gone.
+  const directory = useDirectory();
   const [currentView, setCurrentView] = useState<ViewType>('list');
 
   // Load persisted requests from Supabase on mount, and live-refresh whenever
@@ -98,9 +98,14 @@ function AllRequestsPageInner() {
     if (!me) return false;
     if (me.role === 'admin') return true;
     if (!me.is_lead) return false;
-    const assignee = SAMPLE_USERS.find((u) => u.id === req.assigned_to);
-    const team = assignee?.email ? teamByEmail.get(assignee.email.toLowerCase()) ?? null : null;
-    return !team || team === me.team;
+    // Look the assignee up in the live directory. This used to search
+    // SAMPLE_USERS, so an unknown assignee produced team = null and the check
+    // below failed OPEN — any lead could complete another team's task.
+    const assignee = findInDirectory(directory, req.assigned_to);
+    const team = assignee?.team
+      ?? (assignee?.email ? teamByEmail.get(assignee.email.toLowerCase()) ?? null : null);
+    if (!team) return false;
+    return team === me.team;
   };
 
   const handleRowDelete = async (id: string) => {
@@ -286,7 +291,7 @@ function AllRequestsPageInner() {
           </thead>
           <tbody>
             {filteredRequests.map(req => {
-              const assignee = getUserById(req.assigned_to);
+              const assignee = findInDirectory(directory, req.assigned_to);
               const isRowOverdue = isOverdue(req);
               const stages = getStagesForType(req.type);
               return (
@@ -400,7 +405,7 @@ function AllRequestsPageInner() {
                   <div className="text-[11.5px] text-center py-6 rounded-lg" style={{ color: 'var(--text-faint)', border: '1px dashed var(--border-strong)' }}>Drop tasks here</div>
                 )}
                 {stageRequests.map(req => {
-                  const assignee = getUserById(req.assigned_to);
+                  const assignee = findInDirectory(directory, req.assigned_to);
                   const daysUntilDue = getDaysUntilDue(req.need_by);
                   const isOverdueReq = daysUntilDue < 0 && !['Done', 'Uploaded'].includes(req.current_stage);
                   return (
@@ -555,7 +560,7 @@ function AllRequestsPageInner() {
       {selectedRequest && (
         <DetailPanel
           request={selectedRequest}
-          users={SAMPLE_USERS}
+          users={directory}
           isOpen={isPanelOpen}
           onClose={handleClosePanel}
           onUpdate={handleUpdateRequest}
