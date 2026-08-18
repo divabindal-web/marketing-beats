@@ -155,6 +155,23 @@
   .gb-sidebar {
     background-color: var(--bg-sidebar);
     border-right: 1px solid var(--border);
+    /* Off-canvas drawer below lg, pinned open from lg up.
+       Owned here rather than via Tailwind translate utilities: v4 emits those
+       through the standalone `translate` property, and the plain
+       `translate-x-0` rule only ever got generated inside the lg: media query,
+       so at phone width there was nothing to override `-translate-x-full` and
+       the drawer never actually moved. */
+    transform: translateX(-100%);
+    transition: transform 200ms ease;
+  }
+  .gb-sidebar[data-open='true'] {
+    transform: translateX(0);
+  }
+  @media (min-width: 1024px) {
+    .gb-sidebar,
+    .gb-sidebar[data-open='true'] {
+      transform: none;
+    }
   }
 
   .gb-nav-section-title {

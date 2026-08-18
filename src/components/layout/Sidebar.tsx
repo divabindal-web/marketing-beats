@@ -214,11 +214,15 @@ export default function Sidebar({ open = false, onNavigate }: SidebarProps) {
     router.push('/auth/login');
   };
 
+  // Tailwind v4 emits translate utilities via the standalone `translate`
+  // property, not `transform`. Toggling an inline `transform` therefore did
+  // not cancel `-translate-x-full`, and the drawer stayed off-screen at
+  // left:-256px even while "open". Both states drive the same property now,
+  // and lg: keeps it pinned open on desktop.
   return (
     <aside
-      className="gb-sidebar w-64 flex flex-col h-screen fixed left-0 top-0 z-40 transition-transform duration-200 -translate-x-full lg:translate-x-0"
-      style={{ transform: open ? 'translateX(0)' : undefined }}
-      data-open={open}
+      className="gb-sidebar w-64 flex flex-col h-screen fixed left-0 top-0 z-40"
+      data-open={open ? 'true' : 'false'}
     >
       {/* Brand */}
       <div className="px-4 pt-5 pb-4">
