@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { fetchRequests, updateRequest } from '@/lib/requests-api';
 import { useRequestsRealtime } from '@/lib/use-requests-realtime';
@@ -58,18 +58,22 @@ function AllRequestsPageInner() {
   };
 
   // ?open=<id> opens that request's panel directly, so a notification can land
-  // on the thing it is about rather than on the list. Runs once the requests
-  // have loaded, and only while the panel is closed, so it does not fight a
-  // panel the person opened themselves.
+  // on the thing it is about rather than on the list.
+  //
+  // Opens once per id and remembers it. Keying this off isPanelOpen instead
+  // would reopen the panel the moment the person closed it, since closing it
+  // is itself what re-runs the effect.
   const openId = searchParams.get('open');
+  const handledOpenId = useRef<string | null>(null);
   useEffect(() => {
-    if (!openId || isPanelOpen || requests.length === 0) return;
+    if (!openId || requests.length === 0 || handledOpenId.current === openId) return;
     const match = requests.find((r) => r.id === openId);
     if (match) {
+      handledOpenId.current = openId;
       setSelectedRequest(match);
       setIsPanelOpen(true);
     }
-  }, [openId, requests, isPanelOpen]);
+  }, [openId, requests]);
 
   const handleUpdateRequest = (updated: Request) => {
     setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
