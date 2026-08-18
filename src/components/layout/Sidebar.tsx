@@ -20,6 +20,7 @@ import {
   Search,
   Star,
   Megaphone,
+  CalendarCheck,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -85,6 +86,11 @@ const navSections: NavSection[] = [
     {
     title: 'Performance Data',
     items: [
+      {
+        label: 'Monthly close',
+        href: '/performance-data/monthly',
+        icon: <CalendarCheck size={16} strokeWidth={1.75} />,
+      },
       {
         label: 'SEO',
         href: '/performance-data/seo',
