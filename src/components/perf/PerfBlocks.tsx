@@ -97,6 +97,43 @@ export function ValueVsTarget({
   );
 }
 
+/**
+ * Inline trend line. Deliberately tiny and axis-free: it sits inside a table
+ * cell to answer "which way is this going" at a glance, which the numbers
+ * either side of it cannot. A single point draws nothing rather than a
+ * misleading flat line.
+ */
+export function Sparkline({
+  values, width = 72, height = 22, target,
+}: { values: (number | null)[]; width?: number; height?: number; target?: number | null }) {
+  const pts = values.filter((v): v is number => v != null);
+  if (pts.length < 2) {
+    return <span style={{ color: 'var(--text-faint)', fontSize: 11 }}>—</span>;
+  }
+  const all = target != null ? [...pts, target] : pts;
+  const min = Math.min(...all);
+  const max = Math.max(...all);
+  const span = max - min || 1;
+  const pad = 2;
+  const x = (i: number) => pad + (i * (width - pad * 2)) / (pts.length - 1);
+  const y = (v: number) => height - pad - ((v - min) / span) * (height - pad * 2);
+  const d = pts.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const rising = pts[pts.length - 1] >= pts[0];
+  const stroke = rising ? 'var(--success)' : 'var(--error)';
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img"
+         aria-label={rising ? 'Trending up' : 'Trending down'} style={{ display: 'block' }}>
+      {target != null && (
+        <line x1={pad} x2={width - pad} y1={y(target)} y2={y(target)}
+              stroke="var(--border-strong)" strokeWidth="1" strokeDasharray="2 2" />
+      )}
+      <path d={d} fill="none" stroke={stroke} strokeWidth="1.5"
+            strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={x(pts.length - 1)} cy={y(pts[pts.length - 1])} r="2" fill={stroke} />
+    </svg>
+  );
+}
+
 /* ---------------- tables ---------------- */
 
 export interface MatrixCol { key: string; label: string; align?: 'left' | 'right' }
@@ -212,6 +249,7 @@ export function TrendTable({
             <th>Metric</th>
             <th style={{ textAlign: 'right' }}>Baseline</th>
             {monthLabels.map((l) => <th key={l} style={{ textAlign: 'right' }}>{l}</th>)}
+            <th style={{ textAlign: 'center', width: 84 }}>Trend</th>
             <th style={{ textAlign: 'right' }}>Target</th>
             <th style={{ textAlign: 'right', minWidth: 130 }}>Latest vs target</th>
           </tr>
@@ -228,6 +266,9 @@ export function TrendTable({
                     {fmtNum(r.byMonth[m] ?? null, r.isPct)}
                   </td>
                 ))}
+                <td style={{ textAlign: 'center' }}>
+                  <div className="inline-block"><Sparkline values={months.map((m) => r.byMonth[m] ?? null)} target={r.target} /></div>
+                </td>
                 <td style={{ textAlign: 'right', color: 'var(--text-faint)' }} className="tabular-nums">{fmtNum(r.target, r.isPct)}</td>
                 <td style={{ textAlign: 'right' }}><TargetBar value={latest} target={r.target} isPct={r.isPct} /></td>
               </tr>

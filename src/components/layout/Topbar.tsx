@@ -1,14 +1,17 @@
 'use client';
-import { Search, Sun, Moon, ChevronRight, Bell } from 'lucide-react';
+import { Search, Sun, Moon, ChevronRight, Bell, Menu } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { myNotifications, unreadCount, markAllRead, NotificationRow } from '@/lib/work-api';
+import SearchPalette from './SearchPalette';
 
 interface TopbarProps {
   title: string;
   onNewRequest?: () => void;
+  /** Opens the nav drawer on small screens, where the sidebar is hidden. */
+  onOpenNav?: () => void;
 }
 
 const breadcrumbMap: Record<string, { section: string; sectionHref: string; label: string }> = {
@@ -22,11 +25,14 @@ const breadcrumbMap: Record<string, { section: string; sectionHref: string; labe
   '/performance/my': { section: 'Performance', sectionHref: '/performance/my', label: 'My Performance' },
   '/performance/team': { section: 'Performance', sectionHref: '/performance/team', label: 'Team Performance' },
   '/performance/change-requests': { section: 'Performance', sectionHref: '/performance/team', label: 'Change Requests' },
+  '/overview': { section: 'Home', sectionHref: '/overview', label: 'Overview' },
+  '/performance-data/monthly': { section: 'Performance Data', sectionHref: '/performance-data/monthly', label: 'Monthly close' },
   '/user-management': { section: 'Admin', sectionHref: '/user-management', label: 'User Management' },
   '/admin/reset-passwords': { section: 'Admin', sectionHref: '/user-management', label: 'Reset Passwords' },
 };
 
-export default function Topbar({ title, onNewRequest }: TopbarProps) {
+export default function Topbar({ title, onNewRequest, onOpenNav }: TopbarProps) {
+  const [searchOpen, setSearchOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
   const [showBell, setShowBell] = useState(false);
@@ -58,6 +64,18 @@ export default function Topbar({ title, onNewRequest }: TopbarProps) {
     setMounted(true);
   }, []);
 
+  // The ⌘K hint has always been on screen; now it does something.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const toggleTheme = () => {
     setTheme(theme === 'light' ? 'dark' : 'light');
   };
@@ -65,26 +83,36 @@ export default function Topbar({ title, onNewRequest }: TopbarProps) {
   const crumb = breadcrumbMap[pathname] ?? { section: 'Workspace', sectionHref: '/', label: title };
 
   return (
-    <header className="gb-topbar h-14 flex items-center justify-between px-6 fixed top-0 right-0 left-64 z-40">
-      {/* Left: Breadcrumb */}
-      <div className="gb-breadcrumb">
+    <header className="gb-topbar h-14 flex items-center justify-between px-4 md:px-6 fixed top-0 right-0 left-0 lg:left-64 z-40">
+      {/* Left: nav toggle (small screens) + breadcrumb */}
+      <div className="flex items-center gap-2 min-w-0">
+        <button onClick={onOpenNav} className="gb-icon-btn lg:hidden flex-shrink-0" title="Menu" aria-label="Open navigation">
+          <Menu size={17} strokeWidth={1.75} />
+        </button>
+      <div className="gb-breadcrumb min-w-0">
         <Link href={crumb.sectionHref} className="gb-breadcrumb-link">
           {crumb.section}
         </Link>
         <ChevronRight size={13} strokeWidth={2} style={{ color: 'var(--text-faint)' }} />
-        <span className="gb-breadcrumb-current">{crumb.label}</span>
+        <span className="gb-breadcrumb-current truncate">{crumb.label}</span>
+      </div>
       </div>
 
       {/* Right: Search + actions */}
       <div className="flex items-center gap-2">
         {/* Search */}
-        <div className="hidden md:flex w-72">
-          <div className="gb-search">
+        <button onClick={() => setSearchOpen(true)} className="hidden md:flex w-72 text-left" aria-label="Search">
+          <div className="gb-search w-full" style={{ cursor: 'pointer' }}>
             <Search size={14} strokeWidth={1.75} style={{ color: 'var(--text-faint)' }} />
-            <input type="text" placeholder="Search requests, users, calendar..." />
+            <span className="flex-1 text-[13px]" style={{ color: 'var(--text-faint)' }}>
+              Search requests, people, pages…
+            </span>
             <kbd>⌘K</kbd>
           </div>
-        </div>
+        </button>
+        <button onClick={() => setSearchOpen(true)} className="gb-icon-btn md:hidden" title="Search" aria-label="Search">
+          <Search size={15} strokeWidth={1.75} />
+        </button>
 
         {/* Theme toggle */}
         {mounted && (
@@ -144,6 +172,8 @@ export default function Topbar({ title, onNewRequest }: TopbarProps) {
         </div>
 
       </div>
+
+      <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
     </header>
   );
 }

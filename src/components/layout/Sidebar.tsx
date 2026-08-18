@@ -21,6 +21,7 @@ import {
   Star,
   Megaphone,
   CalendarCheck,
+  Compass,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -43,6 +44,16 @@ interface NavSection {
 }
 
 const navSections: NavSection[] = [
+  {
+    title: 'Home',
+    items: [
+      {
+        label: 'Overview',
+        href: '/overview',
+        icon: <Compass size={16} strokeWidth={1.75} />,
+      },
+    ],
+  },
   {
     title: 'Design Ops',
     items: [
@@ -130,7 +141,13 @@ const navSections: NavSection[] = [
   },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  /** Drawer state on small screens; ignored from lg up, where it is always shown. */
+  open?: boolean;
+  onNavigate?: () => void;
+}
+
+export default function Sidebar({ open = false, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { role, toggleRole, setRole } = useRole();
@@ -198,7 +215,11 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="gb-sidebar w-64 flex flex-col h-screen fixed left-0 top-0 z-30">
+    <aside
+      className="gb-sidebar w-64 flex flex-col h-screen fixed left-0 top-0 z-40 transition-transform duration-200 -translate-x-full lg:translate-x-0"
+      style={{ transform: open ? 'translateX(0)' : undefined }}
+      data-open={open}
+    >
       {/* Brand */}
       <div className="px-4 pt-5 pb-4">
         <Link href="/design-ops/dashboard" className="flex items-center gap-2.5 group">
@@ -289,6 +310,7 @@ export default function Sidebar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={onNavigate}
                   className={`gb-nav-item ${isActive(item.href) ? 'gb-nav-item-active' : ''}`}
                 >
                   <span className="flex-shrink-0">{item.icon}</span>
