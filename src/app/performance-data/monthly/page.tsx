@@ -38,9 +38,13 @@ export default function MonthlyClosePage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [onlyGaps, setOnlyGaps] = useState(false);
-  const [meId, setMeId] = useState<string | null>(null);
+  const [me, setMe] = useState<{ id: string; role: string; is_lead: boolean } | null>(null);
 
-  useEffect(() => { currentDbUser().then((m) => setMeId(m?.id ?? null)).catch(() => {}); }, []);
+  useEffect(() => { currentDbUser().then((m) => setMe(m ? { id: m.id, role: m.role, is_lead: m.is_lead } : null)).catch(() => {}); }, []);
+
+  // Anyone on the team can type in the month's numbers — they are the people
+  // reading them off the source. Declaring the month closed is a lead/CMO call.
+  const canSignOff = !!me && (me.role === 'admin' || me.is_lead);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -192,9 +196,9 @@ export default function MonthlyClosePage() {
                    style={{ accentColor: 'var(--brand)' }} />
             Only rows needing attention
           </label>
-          {view && view.filled === view.total && view.total > 0 && stateOf(domain) === 'open' && (
+          {canSignOff && view && view.filled === view.total && view.total > 0 && stateOf(domain) === 'open' && (
             <button className="gb-btn gb-btn-primary" onClick={async () => {
-              await setMonthState(domain, month, 'submitted', meId);
+              await setMonthState(domain, month, 'submitted', me?.id ?? null);
               setStatuses(await fetchMonthStatuses(month));
             }}>
               <Check size={14} /> Sign off {DOMAIN_LABEL[domain]}
