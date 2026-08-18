@@ -44,7 +44,16 @@ export default function OverviewPage() {
   const [teamIds, setTeamIds] = useState<Set<string> | null>(null);
   const month = defaultMonth();
 
-  useEffect(() => { currentDbUser().then((m) => setMe(m as never)).catch(() => {}); }, []);
+  // `me` decides which of the three pages this is, so the role must be known
+  // before anything renders. Defaulting to 'member' while it loads flashed the
+  // wrong page at admins and leads for a beat.
+  const [roleReady, setRoleReady] = useState(false);
+  useEffect(() => {
+    currentDbUser()
+      .then((m) => setMe(m as never))
+      .catch(() => {})
+      .finally(() => setRoleReady(true));
+  }, []);
 
   const load = useCallback(() => {
     fetchRequests().then(setRequests).catch(() => {});
@@ -111,6 +120,21 @@ export default function OverviewPage() {
   const greeting = new Date().getHours() < 12 ? 'Good morning'
     : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
   const firstName = (me?.name ?? currentUser?.name ?? '').split(' ')[0];
+
+  if (!roleReady) {
+    return (
+      <div>
+        <div className="gb-page-header">
+          <div className="mb-skeleton h-7 rounded" style={{ width: 260 }} />
+          <div className="mb-skeleton h-3.5 rounded mt-2" style={{ width: 380 }} />
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+          {[0, 1, 2, 3].map((i) => <div key={i} className="gb-stat-card"><div className="mb-skeleton h-12 rounded" /></div>)}
+        </div>
+        <div className="gb-card p-10" />
+      </div>
+    );
+  }
 
   return (
     <div>
