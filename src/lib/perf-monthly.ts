@@ -94,6 +94,20 @@ export function statusOf(c: Cell): Status {
 
 /* ---------------- loading ---------------- */
 
+/** Most recent month that actually has a value, so views open on real data. */
+export async function latestMonthWithData(domain: Domain): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('perf_metric_series')
+    .select('month')
+    .eq('domain', domain)
+    .not('value', 'is', null)
+    .order('month', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? String(data.month).slice(0, 10) : null;
+}
+
 export async function fetchEntities(domain: Domain): Promise<EntityRow[]> {
   const { data, error } = await supabase
     .from('perf_entity')
