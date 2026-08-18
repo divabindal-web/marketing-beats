@@ -1,221 +1,233 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+/**
+ * Paid Campaigns tab.
+ *
+ * The sheet's own monthly tracker is broken from Jul-26 onward — its targets
+ * referenced a "Team Config" tab that no longer exists, so every cell reads
+ * #REF! — and its budget column mixed lakhs with rupees, which made the
+ * variance column meaningless. Both are handled on import: only real figures
+ * came across, and spend was normalised to lakhs throughout.
+ */
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Upload, Download } from 'lucide-react';
-import { fmtCompact } from '@/lib/perf-data';
-import { fetchSeries, type SeriesRow } from '@/lib/perf-api';
-import { Bars, GroupedBars, HBars, Legend, StatCard } from '@/components/perf/Charts';
+import { AlertTriangle, PencilLine } from 'lucide-react';
+import { DomainData, fetchDomain, fmtNum, monthShort } from '@/lib/perf-detail';
+import { EmptyNote, Kpi, PlanMatrix, Section, TargetBar, ValueVsTarget } from '@/components/perf/PerfBlocks';
 
-const monthYear = (m: string) =>
-  new Date(m + 'T00:00:00').toLocaleString('en-US', { month: 'short' }) +
-  '-' +
-  m.slice(0, 4);
+const TEAMS = ['INCO - GCC', 'INCO - IN', 'Australia', 'Canada', 'IPM'];
+const CITIES = ['Bangalore', 'Chennai', 'Hyderabad', 'Mumbai', 'Pune', 'Gurgaon', 'Noida', 'AbuDhabi', 'Dubai'];
+const CITY_METRICS = ['Total spend', 'CPL Apr 2025', 'CPL Feb 2026', 'CPL decrease', 'CPL avg', 'CPC avg', 'Qualification avg'];
 
 export default function PaidPage() {
-  const [rows, setRows] = useState<SeriesRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<DomainData | null>(null);
+  const [err, setErr] = useState('');
 
   useEffect(() => {
-    let alive = true;
-    fetchSeries('paid')
-      .then((r) => alive && setRows(r))
-      .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
-    return () => {
-      alive = false;
-    };
+    fetchDomain('paid').then(setData).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, []);
 
-  const model = useMemo(() => {
-    if (!rows || !rows.length) return null;
+  const plan = (entity: string, metric: string, period: string) =>
+    data?.plan.find((r) => r.entity === entity && r.metric === metric && r.period === period)?.value ?? null;
 
-    // rows are ordered by month asc — a Map keeps the latest value per entity+metric
-    const latest = new Map<string, number | null>();
-    const series = new Map<string, SeriesRow[]>(); // entity|metric → all months asc
-    for (const r of rows) {
-      const k = r.entity + '|' + r.metric;
-      latest.set(k, r.value);
-      const list = series.get(k) ?? [];
-      list.push(r);
-      series.set(k, list);
-    }
-    const val = (entity: string, metric: string) => latest.get(entity + '|' + metric) ?? null;
+  const totals = useMemo(() => {
+    if (!data) return null;
+    const spend = TEAMS.reduce((s, t) => s + (plan(t, 'Total spend (Cr)', 'FY25-26') ?? 0), 0);
+    const rev = TEAMS.reduce((s, t) => s + (plan(t, 'Marketing revenue', 'FY25-26') ?? 0), 0);
+    const leads = data.plan.filter((r) => r.entity === 'All sources' && r.period === 'FY25-26')
+      .reduce((s, r) => s + (r.value ?? 0), 0);
+    return { spend, rev, roas: spend ? rev / (spend * 1e7) : null, leads };
+  }, [data]);
 
-    // Teams: entities that report ROAS
-    const teamNames = [...new Set(rows.filter((r) => r.metric === 'roas').map((r) => r.entity))];
-    const teams = teamNames
-      .map((n) => {
-        const spent = val(n, 'spend') ?? 0;
-        const rev = val(n, 'revenue') ?? 0;
-        return { n, spent, rev, roas: val(n, 'roas') ?? 0, revCr: +(rev / 1e7).toFixed(1) };
-      })
-      .sort((a, b) => b.rev - a.rev);
-    const totalRev = teams.reduce((s, t) => s + t.rev, 0);
-    const totalSpend = teams.reduce((s, t) => s + t.spent, 0);
-    const withShare = teams.map((t) => ({ ...t, share: totalRev > 0 ? Math.round((t.rev / totalRev) * 100) : 0 }));
-
-    // CPL: two months per city (older = a, newer = b)
-    const cplEntities = [...new Set(rows.filter((r) => r.metric === 'cpl').map((r) => r.entity))];
-    const cpl = cplEntities.map((c) => {
-      const m = (series.get(c + '|cpl') ?? []).filter((r) => r.value != null);
-      const bRow = m[m.length - 1];
-      const aRow = m.length > 1 ? m[m.length - 2] : null;
-      return { c, a: aRow?.value ?? null, b: bRow?.value ?? null };
-    });
-    const cplMonths = [...new Set(rows.filter((r) => r.metric === 'cpl').map((r) => r.month))].sort();
-    const cplA = cplMonths.length > 1 ? monthYear(cplMonths[0]) : 'Previous';
-    const cplB = cplMonths.length ? monthYear(cplMonths[cplMonths.length - 1]) : 'Current';
-
-    // Leads by source (latest month per entity)
-    const leads = [...new Set(rows.filter((r) => r.metric === 'leads').map((r) => r.entity))]
-      .map((s) => ({ s, v: val(s, 'leads') ?? 0 }))
-      .sort((a, b) => b.v - a.v);
-    const paidLeads = leads.find((l) => l.s === 'Paid')?.v ?? leads[0]?.v ?? 0;
-
+  const monthly = useMemo(() => {
+    if (!data) return { months: [], rows: [] as { team: string; byMonth: Record<string, { v: number | null; t: number | null }> }[] };
+    const spend = data.series.filter((r) => r.metric === 'Spend (Lakh)');
+    const months = [...new Set(spend.map((r) => r.month))].sort();
+    const teams = [...new Set(spend.map((r) => r.entity))];
     return {
-      teams: withShare,
-      cpl,
-      cplA,
-      cplB,
-      leads,
-      totals: {
-        revCr: +(totalRev / 1e7).toFixed(1),
-        spendCr: +(totalSpend / 1e7).toFixed(1),
-        blendedRoas: totalSpend > 0 ? totalRev / totalSpend : 0,
-        paidLeads,
-      },
+      months,
+      rows: teams.map((team) => ({
+        team,
+        byMonth: Object.fromEntries(months.map((m) => {
+          const row = spend.find((r) => r.entity === team && r.month === m);
+          return [m, { v: row?.value ?? null, t: row?.target ?? null }];
+        })),
+      })),
     };
-  }, [rows]);
+  }, [data]);
+
+  const leadSources = useMemo(() => {
+    if (!data) return [];
+    return data.plan
+      .filter((r) => r.entity === 'All sources' && r.period === 'FY25-26')
+      .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
+      .map((r) => ({ label: r.metric.replace('Leads — ', ''), value: r.value ?? 0 }));
+  }, [data]);
+  const leadMax = leadSources[0]?.value || 1;
+
+  const cityRows = useMemo(() => {
+    if (!data) return [];
+    return CITY_METRICS.map((metric) => ({
+      metric,
+      values: Object.fromEntries(CITIES.map((c) => [c, plan('City · ' + c, metric, 'FY25-26')])),
+    }));
+  }, [data]);
 
   return (
     <div>
-      <div className="gb-page-header flex items-start justify-between gap-6">
+      <div className="gb-page-header flex items-start justify-between gap-6 flex-wrap">
         <div>
           <h1 className="gb-page-title">Paid Campaigns</h1>
-          <p className="gb-page-description">Spend, revenue &amp; ROAS by team</p>
-          <p className="text-[11.5px] mt-1" style={{ color: 'var(--text-faint)' }}>
-            Live from database · updated via Upload Data
+          <p className="gb-page-description">
+            Spend, return and cost per lead by team and city — FY25-26 close and this year&apos;s run-rate.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/performance-data/upload" className="gb-btn gb-btn-secondary">
-            <Download size={14} strokeWidth={2} />
-            Template
-          </Link>
-          <Link href="/performance-data/upload" className="gb-btn gb-btn-primary">
-            <Upload size={14} strokeWidth={2.25} />
-            Upload month
-          </Link>
-        </div>
+        <Link href="/performance-data/monthly" className="gb-btn gb-btn-primary">
+          <PencilLine size={14} strokeWidth={2.25} /> Enter this month
+        </Link>
       </div>
 
-      {error && (
-        <p className="text-[12.5px] mb-4" style={{ color: 'var(--error)' }}>
-          Couldn&apos;t load Paid data: {error}
-        </p>
-      )}
-      {!error && !rows && (
-        <p className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>
-          Loading…
-        </p>
-      )}
-      {!error && rows && !model && (
-        <div className="gb-card p-6 text-center">
-          <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-            No Paid data yet
-          </p>
-          <p className="gb-page-description">
-            Upload a CSV on the{' '}
-            <Link href="/performance-data/upload" style={{ textDecoration: 'underline' }}>
-              Upload Data
-            </Link>{' '}
-            page to populate this dashboard.
-          </p>
-        </div>
-      )}
+      {err && <p className="text-[12.5px] mb-4" style={{ color: 'var(--error)' }}>{err}</p>}
+      {!err && !data && <p className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>Loading…</p>}
 
-      {model && (
+      {data && totals && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-            <StatCard label="Marketing Revenue" value={`₹${model.totals.revCr} Cr`} sub="across teams" />
-            <StatCard label="Blended ROAS" value={`${model.totals.blendedRoas.toFixed(1)}×`} sub="revenue ÷ spend" />
-            <StatCard label="Total Ad Spend" value={`₹${model.totals.spendCr} Cr`} sub="across teams" />
-            <StatCard label="Paid Leads" value={fmtCompact(model.totals.paidLeads)} sub="largest source" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 mb-stagger">
+            <Kpi label="Spend FY25-26" value={`₹${totals.spend.toFixed(2)} Cr`} tone="brand" />
+            <Kpi label="Marketing revenue" value={`₹${(totals.rev / 1e7).toFixed(1)} Cr`} tone="success" />
+            <Kpi label="Blended ROAS" value={totals.roas ? `${totals.roas.toFixed(1)}x` : '—'} tone="warning" />
+            <Kpi label="Leads all sources" value={fmtNum(totals.leads)} tone="neutral" />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <div className="gb-card p-4">
-              <h3 className="gb-section-title" style={{ marginBottom: 2 }}>ROAS by team</h3>
-              <p className="gb-page-description mb-3">return on ad spend (×)</p>
-              <Bars
-                vals={model.teams.map((t) => t.roas)}
-                labels={model.teams.map((t) => t.n)}
-                color="#eda100"
-                fmt={(v) => v + '×'}
-              />
+          <div className="gb-card p-4 mb-8" style={{ borderColor: 'var(--warning)' }}>
+            <div className="text-[12.5px] font-semibold inline-flex items-center gap-1.5" style={{ color: 'var(--warning)' }}>
+              <AlertTriangle size={14} /> The sheet&apos;s monthly tracker is broken from July onward
             </div>
-            <div className="gb-card p-4">
-              <h3 className="gb-section-title" style={{ marginBottom: 2 }}>Revenue vs Spend by team</h3>
-              <p className="gb-page-description mb-3">₹ Crore</p>
-              <GroupedBars
-                items={model.teams.map((t) => ({ n: t.n, spend: +(t.spent / 1e7).toFixed(1), rev: t.revCr }))}
-                keys={['spend', 'rev']}
-                colors={['#c9c7bf', '#008300']}
-                fmt={(v) => '' + v}
-              />
-              <Legend names={['Spend (Cr)', 'Revenue (Cr)']} colors={['#c9c7bf', '#008300']} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <div className="gb-card p-4">
-              <h3 className="gb-section-title" style={{ marginBottom: 2 }}>CPL improvement by city</h3>
-              <p className="gb-page-description mb-3">
-                cost per lead: {model.cplA} → {model.cplB} (lower is better)
-              </p>
-              <GroupedBars
-                items={model.cpl.map((x) => ({ n: x.c, a: x.a, b: x.b }))}
-                keys={['a', 'b']}
-                colors={['#c9c7bf', '#eb6834']}
-                fmt={(v) => '₹' + fmtCompact(v)}
-              />
-              <Legend names={[model.cplA, model.cplB]} colors={['#c9c7bf', '#eb6834']} />
-            </div>
-            <div className="gb-card p-4">
-              <h3 className="gb-section-title" style={{ marginBottom: 2 }}>Leads by source</h3>
-              <p className="gb-page-description mb-3">where leads come from</p>
-              <HBars items={model.leads.map((x) => ({ n: x.s, v: x.v }))} labelW={100} color="#2a78d6" />
-            </div>
-          </div>
-
-          <div className="gb-card p-4">
-            <h3 className="gb-section-title" style={{ marginBottom: 2 }}>Team performance table</h3>
-            <table className="w-full text-[12.5px]">
-              <thead>
-                <tr style={{ color: 'var(--text-faint)' }}>
-                  <th className="text-left py-2 px-2.5 font-semibold uppercase text-[10.5px] tracking-wide">Team</th>
-                  <th className="text-right py-2 px-2.5 font-semibold uppercase text-[10.5px] tracking-wide">Spent</th>
-                  <th className="text-right py-2 px-2.5 font-semibold uppercase text-[10.5px] tracking-wide">Revenue</th>
-                  <th className="text-right py-2 px-2.5 font-semibold uppercase text-[10.5px] tracking-wide">ROAS</th>
-                  <th className="text-right py-2 px-2.5 font-semibold uppercase text-[10.5px] tracking-wide">Rev share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {model.teams.map((t) => (
-                  <tr key={t.n} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td className="text-left py-2 px-2.5">{t.n}</td>
-                    <td className="text-right py-2 px-2.5">₹{fmtCompact(t.spent)}</td>
-                    <td className="text-right py-2 px-2.5">₹{t.revCr} Cr</td>
-                    <td className="text-right py-2 px-2.5 font-bold">{t.roas}×</td>
-                    <td className="text-right py-2 px-2.5">{t.share}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="text-[11.5px] mt-3" style={{ color: 'var(--text-faint)' }}>
-              Live data. The full monthly plan-vs-actual tracker (budget, qualified, meetings, win, CPC) also lives in the tracker and drops into this view.
+            <p className="text-[12px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+              Its targets referenced a &ldquo;Team Config&rdquo; tab that no longer exists, so every cell from Jul-26
+              reads #REF!. Only April to June carried real figures. Spend was also mixed between lakhs and rupees
+              in one column and has been normalised to lakhs here.
             </p>
           </div>
+
+          <Section title="Team scorecard — FY25-26" subtitle="Closing position and the FY26-27 targets set against it">
+            <div className="gb-card overflow-x-auto">
+              <table className="gb-table" style={{ minWidth: 760 }}>
+                <thead>
+                  <tr>
+                    <th>Team</th>
+                    <th style={{ textAlign: 'right' }}>Spend</th>
+                    <th style={{ textAlign: 'right' }}>Revenue</th>
+                    <th style={{ textAlign: 'right' }}>Rev share</th>
+                    <th style={{ textAlign: 'right' }}>ROAS</th>
+                    <th style={{ textAlign: 'right' }}>ROAS target</th>
+                    <th style={{ textAlign: 'right' }}>CPL</th>
+                    <th style={{ textAlign: 'right' }}>CPL target</th>
+                    <th style={{ textAlign: 'right' }}>Qualification</th>
+                    <th style={{ textAlign: 'right', minWidth: 120 }}>vs qual. target</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {TEAMS.map((t) => {
+                    const roas = plan(t, 'ROAS', 'FY25-26');
+                    const roasT = plan(t, 'ROAS target', 'FY26-27');
+                    const cpl = plan(t, 'CPL', 'FY25-26');
+                    const cplT = plan(t, 'Target CPL', 'FY26-27');
+                    const qual = plan(t, 'Qualification', 'FY25-26');
+                    const qualT = plan(t, 'Target qualification', 'FY26-27');
+                    return (
+                      <tr key={t}>
+                        <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t}</td>
+                        <td style={{ textAlign: 'right' }} className="tabular-nums">₹{(plan(t, 'Total spend (Cr)', 'FY25-26') ?? 0).toFixed(2)} Cr</td>
+                        <td style={{ textAlign: 'right' }} className="tabular-nums">₹{((plan(t, 'Marketing revenue', 'FY25-26') ?? 0) / 1e7).toFixed(1)} Cr</td>
+                        <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }} className="tabular-nums">{fmtNum(plan(t, 'Revenue share %', 'FY25-26'), true)}</td>
+                        <td style={{ textAlign: 'right' }}><ValueVsTarget value={roas} target={roasT} /></td>
+                        <td style={{ textAlign: 'right', color: 'var(--text-faint)' }} className="tabular-nums">{roasT ? `${roasT}x` : '—'}</td>
+                        <td style={{ textAlign: 'right' }}><ValueVsTarget value={cpl} target={cplT} lowerIsBetter /></td>
+                        <td style={{ textAlign: 'right', color: 'var(--text-faint)' }} className="tabular-nums">{fmtNum(cplT)}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }} className="tabular-nums">{fmtNum(qual, true)}</td>
+                        <td style={{ textAlign: 'right' }}><TargetBar value={qual} target={qualT} /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+
+          <Section title="Monthly spend against budget" subtitle="April to June 2026 — the only months the sheet's tracker still holds">
+            {monthly.rows.length === 0 ? <EmptyNote text="No monthly spend recorded." /> : (
+              <div className="gb-card overflow-x-auto">
+                <table className="gb-table" style={{ minWidth: 620 }}>
+                  <thead>
+                    <tr>
+                      <th>Team</th>
+                      {monthly.months.map((m) => (
+                        <th key={m} style={{ textAlign: 'right' }} colSpan={2}>{monthShort(m)}</th>
+                      ))}
+                    </tr>
+                    <tr>
+                      <th />
+                      {monthly.months.map((m) => (
+                        <React.Fragment key={m}>
+                          <th style={{ textAlign: 'right', fontWeight: 400, fontSize: 10 }}>spend</th>
+                          <th style={{ textAlign: 'right', fontWeight: 400, fontSize: 10 }}>budget</th>
+                        </React.Fragment>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthly.rows.map((r) => (
+                      <tr key={r.team}>
+                        <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{r.team}</td>
+                        {monthly.months.map((m) => {
+                          const c = r.byMonth[m];
+                          const over = c.v != null && c.t != null && c.v > c.t;
+                          return (
+                            <React.Fragment key={m}>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: over ? 'var(--error)' : 'var(--text-primary)' }} className="tabular-nums">
+                                {c.v != null ? c.v.toFixed(1) : '—'}
+                              </td>
+                              <td style={{ textAlign: 'right', color: 'var(--text-faint)' }} className="tabular-nums">
+                                {c.t != null ? c.t.toFixed(1) : '—'}
+                              </td>
+                            </React.Fragment>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="px-4 py-2 text-[11px]" style={{ color: 'var(--text-faint)', borderTop: '1px solid var(--border)' }}>
+                  All figures in ₹ lakh. Red means spend ran over budget that month.
+                </div>
+              </div>
+            )}
+          </Section>
+
+          <Section title="Leads by source — FY25-26" subtitle="Where every lead came from last year">
+            <div className="gb-card p-5">
+              <div className="space-y-3">
+                {leadSources.map((s) => (
+                  <div key={s.label} className="flex items-center gap-3">
+                    <div className="text-[12.5px] flex-shrink-0" style={{ width: 190, color: 'var(--text-secondary)' }}>{s.label}</div>
+                    <div className="flex-1 h-5 rounded overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+                      <div className="h-full rounded transition-[width] duration-700"
+                           style={{ width: `${Math.max(1, (s.value / leadMax) * 100)}%`, backgroundColor: 'var(--brand)' }} />
+                    </div>
+                    <div className="text-[12.5px] font-semibold tabular-nums flex-shrink-0" style={{ width: 90, textAlign: 'right', color: 'var(--text-primary)' }}>
+                      {s.value.toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Section>
+
+          <Section title="City economics — FY25-26" subtitle="Spend, cost per lead and qualification rate by city">
+            <PlanMatrix rows={cityRows} cols={CITIES.map((c) => ({ key: c, label: c }))}
+                        pctMetrics={['CPL decrease', 'Qualification avg']} />
+          </Section>
         </>
       )}
     </div>

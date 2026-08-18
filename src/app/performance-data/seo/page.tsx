@@ -1,267 +1,161 @@
 'use client';
 
+/**
+ * SEO tab — the whole SEO sheet, in three layers:
+ *   1. this year's monthly run-rate per vertical, against the 2027 target
+ *   2. the plan itself (Baseline 2026 -> Target 2027)
+ *   3. last year's close (FY24-25 vs FY25-26) including GEO
+ */
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Upload, Download } from 'lucide-react';
-import { fmtCompact, momDelta } from '@/lib/perf-data';
-import { fetchSeries, type SeriesRow } from '@/lib/perf-api';
-import { Bars, HBars, StatCard } from '@/components/perf/Charts';
+import { PencilLine, TrendingUp } from 'lucide-react';
+import {
+  DomainData, fetchDomain, fmtNum, monthShort, pctChange, pivotPlan,
+} from '@/lib/perf-detail';
+import { CompareTable, Kpi, PlanMatrix, Section, Segmented, TrendTable, EmptyNote } from '@/components/perf/PerfBlocks';
 
-interface SeoMetric {
-  base: number | null;
-  target: number | null;
-  m: (number | null)[]; // aligned to model.months
-  pct?: boolean;
-  cr?: boolean;
-}
-type SeoEntity = Record<string, SeoMetric>;
-
-const METRIC_ROWS: { label: string; key: string }[] = [
-  { label: 'Organic Clicks', key: 'clicks' },
-  { label: 'Impressions', key: 'impressions' },
-  { label: 'Lead Volume', key: 'leadVol' },
-  { label: 'Organic Lead Volume', key: 'orgLeadVol' },
-  { label: 'Organic Lead Share %', key: 'orgShare' },
-  { label: 'Organic Revenue (Cr)', key: 'revenueCr' },
-];
-
-const monthLabel = (m: string) =>
-  new Date(m + 'T00:00:00').toLocaleString('en-US', { month: 'short' });
+/** Verticals tracked month-to-month this year. */
+const VERTICALS = ['SQY - SEO', 'SQY - GEO', 'INCO - IN', 'INCO - GCC', 'UM'];
+/** Entities used by last year's close, which is grouped by brand not vertical. */
+const YOY_ENTITIES = ['SQY', 'INCO', 'UM'];
 
 export default function SeoPage() {
-  const [rows, setRows] = useState<SeriesRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [entSel, setEntSel] = useState<string | null>(null);
+  const [data, setData] = useState<DomainData | null>(null);
+  const [err, setErr] = useState('');
+  const [vertical, setVertical] = useState('SQY - SEO');
 
   useEffect(() => {
-    let alive = true;
-    fetchSeries('seo')
-      .then((r) => alive && setRows(r))
-      .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
-    return () => {
-      alive = false;
-    };
+    fetchDomain('seo').then(setData).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, []);
 
-  const model = useMemo(() => {
-    if (!rows || !rows.length) return null;
-    const entities = [...new Set(rows.map((r) => r.entity))].sort();
+  const label = (e: string) => data?.entities.find((x) => x.entity === e)?.label ?? e;
+
+  const trend = useMemo(() => {
+    if (!data) return { months: [], rows: [] as never[] };
+    const rows = data.series.filter((r) => r.entity === vertical);
     const months = [...new Set(rows.map((r) => r.month))].sort();
-    const labels = months.map(monthLabel);
-    const data: Record<string, SeoEntity> = {};
-    for (const e of entities) data[e] = {};
-    for (const r of rows) {
-      const d = data[r.entity];
-      if (!d[r.metric]) {
-        d[r.metric] = {
-          base: null,
-          target: null,
-          m: months.map(() => null),
-          pct: false,
-          cr: r.metric === 'revenueCr',
+    const metrics = [...new Set(rows.map((r) => r.metric))];
+    return {
+      months,
+      rows: metrics.map((metric) => {
+        const rs = rows.filter((r) => r.metric === metric);
+        const byMonth: Record<string, number | null> = {};
+        rs.forEach((r) => { byMonth[r.month] = r.value; });
+        return {
+          metric, isPct: rs[0]?.is_pct ?? false,
+          target: rs.find((r) => r.target != null)?.target ?? null,
+          baseline: rs.find((r) => r.baseline != null)?.baseline ?? null,
+          byMonth,
         };
+      }),
+    };
+  }, [data, vertical]);
+
+  const planRows = useMemo(() => {
+    if (!data) return [];
+    const p = pivotPlan(data.plan, vertical);
+    return [...p.entries()]
+      .filter(([, v]) => v.has('Baseline 2026') || v.has('Target 2027'))
+      .map(([metric, v]) => ({
+        metric,
+        values: { base: v.get('Baseline 2026') ?? null, target: v.get('Target 2027') ?? null },
+      }));
+  }, [data, vertical]);
+
+  const yoy = useMemo(() => {
+    if (!data) return [];
+    const out: { metric: string; group: string; from: number | null; to: number | null }[] = [];
+    const metrics = [...new Set(data.plan.filter((r) => r.period === 'FY24-25').map((r) => r.metric))];
+    for (const metric of metrics) {
+      for (const g of YOY_ENTITIES) {
+        const from = data.plan.find((r) => r.entity === g && r.metric === metric && r.period === 'FY24-25')?.value ?? null;
+        const to = data.plan.find((r) => r.entity === g && r.metric === metric && r.period === 'FY25-26')?.value ?? null;
+        if (from != null || to != null) out.push({ metric, group: g, from, to });
       }
-      const m = d[r.metric];
-      m.m[months.indexOf(r.month)] = r.value;
-      if (r.baseline != null) m.base = r.baseline;
-      if (r.target != null) m.target = r.target;
-      if (r.is_pct) m.pct = true;
     }
-    return { entities, months, labels, data, last: months.length - 1 };
-  }, [rows]);
+    return out;
+  }, [data]);
 
-  const ent = model ? (entSel && model.entities.includes(entSel) ? entSel : model.entities[0]) : null;
-  const D = model && ent ? model.data[ent] : null;
-
-  const fmtMetric = (v: number | null, m: { pct?: boolean; cr?: boolean }) =>
-    v == null ? '—' : m.pct ? v.toFixed(1) + '%' : m.cr ? v.toFixed(2) : fmtCompact(v);
-
-  const kpis: { label: string; key: string; fmt: (v: number | null) => string }[] = [
-    { label: 'Organic Clicks', key: 'clicks', fmt: fmtCompact },
-    { label: 'Organic Leads', key: 'orgLeadVol', fmt: fmtCompact },
-    { label: 'Organic Lead Share', key: 'orgShare', fmt: (v) => (v == null ? '—' : v.toFixed(1) + '%') },
-    { label: 'Organic Revenue', key: 'revenueCr', fmt: (v) => (v == null ? '—' : '₹' + v.toFixed(2) + ' Cr') },
-    { label: 'Lead Volume', key: 'leadVol', fmt: fmtCompact },
-  ];
-
-  const compare = model
-    ? model.entities.map((e) => ({
-        n: e.replace(' - SEO', '').replace(' - ', ' '),
-        v: model.data[e].clicks?.m[model.last] ?? 0,
-      }))
-    : [];
+  // Headline: the most recent month with a value for the selected vertical.
+  const kpis = useMemo(() => {
+    if (!trend.months.length) return null;
+    const last = trend.months[trend.months.length - 1];
+    const prev = trend.months[trend.months.length - 2];
+    const pick = (m: string) => trend.rows.find((r) => r.metric.startsWith(m));
+    const traffic = pick('Traffic');
+    const leads = pick('Organic Lead Volume') && !pick('Organic Lead Volume')!.isPct ? pick('Organic Lead Volume') : undefined;
+    const share = trend.rows.find((r) => r.isPct);
+    const rev = pick('Revenue');
+    return { last, prev, traffic, leads, share, rev };
+  }, [trend]);
 
   return (
     <div>
-      <div className="gb-page-header flex items-start justify-between gap-6">
+      <div className="gb-page-header flex items-start justify-between gap-6 flex-wrap">
         <div>
-          <h1 className="gb-page-title">SEO Performance</h1>
-          <p className="gb-page-description">Organic search, month-over-month · sourced from the marketing tracker</p>
-          <p className="text-[11.5px] mt-1" style={{ color: 'var(--text-faint)' }}>
-            Live from database · updated via Upload Data
+          <h1 className="gb-page-title">SEO</h1>
+          <p className="gb-page-description">
+            Organic and GEO performance by vertical — run-rate, plan and last year&apos;s close.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/performance-data/upload" className="gb-btn gb-btn-secondary">
-            <Download size={14} strokeWidth={2} />
-            Template
-          </Link>
-          <Link href="/performance-data/upload" className="gb-btn gb-btn-primary">
-            <Upload size={14} strokeWidth={2.25} />
-            Upload month
-          </Link>
-        </div>
+        <Link href="/performance-data/monthly" className="gb-btn gb-btn-primary">
+          <PencilLine size={14} strokeWidth={2.25} /> Enter this month
+        </Link>
       </div>
 
-      {error && (
-        <p className="text-[12.5px] mb-4" style={{ color: 'var(--error)' }}>
-          Couldn&apos;t load SEO data: {error}
-        </p>
-      )}
-      {!error && !rows && (
-        <p className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>
-          Loading…
-        </p>
-      )}
-      {!error && rows && !model && (
-        <div className="gb-card p-6 text-center">
-          <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-            No SEO data yet
-          </p>
-          <p className="gb-page-description">
-            Upload a CSV on the{' '}
-            <Link href="/performance-data/upload" style={{ textDecoration: 'underline' }}>
-              Upload Data
-            </Link>{' '}
-            page to populate this dashboard.
-          </p>
-        </div>
-      )}
+      {err && <p className="text-[12.5px] mb-4" style={{ color: 'var(--error)' }}>{err}</p>}
+      {!err && !data && <p className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>Loading…</p>}
 
-      {model && ent && D && (
+      {data && (
         <>
-          {/* entity tabs */}
-          <div className="gb-tabs mb-5">
-            {model.entities.map((e) => (
-              <button key={e} onClick={() => setEntSel(e)} className={`gb-tab ${e === ent ? 'gb-tab-active' : ''}`}>
-                {e}
-              </button>
-            ))}
+          <div className="mb-6">
+            <Segmented
+              value={vertical}
+              onChange={setVertical}
+              options={VERTICALS.map((v) => ({ value: v, label: label(v) }))}
+            />
           </div>
 
-          {/* KPIs */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
-            {kpis.map((k) => {
-              const d = D[k.key];
-              if (!d) return null;
-              const cur = d.m[model.last];
-              const prev = model.last > 0 ? d.m[model.last - 1] : null;
-              const mom = momDelta(cur, prev);
-              return (
-                <StatCard
-                  key={k.key}
-                  label={k.label}
-                  value={k.fmt(cur)}
-                  delta={mom != null ? { up: mom >= 0, txt: Math.abs(mom).toFixed(1) + '% MoM' } : null}
-                  sub={d.target != null ? `Target: ${d.pct ? d.target + '%' : fmtCompact(d.target)}` : undefined}
-                />
-              );
-            })}
-          </div>
+          {kpis && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8 mb-stagger">
+              <Kpi label="Traffic" tone="brand"
+                   value={fmtNum(kpis.traffic?.byMonth[kpis.last] ?? null)}
+                   sub={monthShort(kpis.last)}
+                   delta={pctChange(kpis.traffic?.byMonth[kpis.prev] ?? null, kpis.traffic?.byMonth[kpis.last] ?? null)} />
+              <Kpi label="Organic leads" tone="success"
+                   value={fmtNum(kpis.leads?.byMonth[kpis.last] ?? null)}
+                   sub={monthShort(kpis.last)}
+                   delta={pctChange(kpis.leads?.byMonth[kpis.prev] ?? null, kpis.leads?.byMonth[kpis.last] ?? null)} />
+              <Kpi label="Organic lead share" tone="warning"
+                   value={fmtNum(kpis.share?.byMonth[kpis.last] ?? null, true)}
+                   sub={kpis.share?.target != null ? `target ${fmtNum(kpis.share.target, true)}` : undefined} />
+              <Kpi label="Revenue from organic" tone="neutral"
+                   value={kpis.rev?.byMonth[kpis.last] != null ? `₹${fmtNum(kpis.rev!.byMonth[kpis.last])} Cr` : '—'}
+                   sub={monthShort(kpis.last)} />
+            </div>
+          )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <div className="gb-card p-4">
-              <h3 className="gb-section-title" style={{ marginBottom: 2 }}>Organic Clicks — monthly</h3>
-              <p className="gb-page-description mb-3">
-                {model.labels[0]} → {model.labels[model.last]}, vs target
-              </p>
-              {D.clicks ? (
-                <Bars vals={D.clicks.m} labels={model.labels} target={D.clicks.target} />
-              ) : (
-                <p className="gb-page-description">—</p>
-              )}
-            </div>
-            <div className="gb-card p-4">
-              <h3 className="gb-section-title" style={{ marginBottom: 2 }}>Organic Lead Share %</h3>
-              <p className="gb-page-description mb-3">Share of leads that are organic — vs target</p>
-              {D.orgShare ? (
-                <Bars
-                  vals={D.orgShare.m}
-                  labels={model.labels}
-                  target={D.orgShare.target}
-                  color="var(--success, #1baf7a)"
-                  fmt={(v) => (v == null ? '—' : v.toFixed(0) + '%')}
-                />
-              ) : (
-                <p className="gb-page-description">—</p>
-              )}
-            </div>
-          </div>
+          <Section title="Monthly run-rate" subtitle={`${label(vertical)} · every metric the sheet tracks, against the 2027 target`}>
+            <TrendTable months={trend.months} monthLabels={trend.months.map(monthShort)} rows={trend.rows} />
+          </Section>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <div className="gb-card p-4">
-              <h3 className="gb-section-title" style={{ marginBottom: 2 }}>Organic Lead Volume — monthly</h3>
-              <p className="gb-page-description mb-3">Actual organic leads produced</p>
-              {D.orgLeadVol && <Bars vals={D.orgLeadVol.m} labels={model.labels} target={D.orgLeadVol.target} color="#008300" />}
-            </div>
-            <div className="gb-card p-4">
-              <h3 className="gb-section-title" style={{ marginBottom: 2 }}>
-                Clicks — entities compared ({model.labels[model.last]})
-              </h3>
-              <p className="gb-page-description mb-3">latest month across entities</p>
-              <HBars items={compare} labelW={100} />
-            </div>
-          </div>
+          <Section title="The plan" subtitle="Baseline 2026 and the 2027 target, as set in the sheet">
+            <PlanMatrix
+              rows={planRows}
+              cols={[{ key: 'base', label: 'Baseline 2026' }, { key: 'target', label: 'Target 2027' }]}
+            />
+          </Section>
 
-          <div className="gb-card p-4">
-            <h3 className="gb-section-title" style={{ marginBottom: 2 }}>
-              Month-over-month table <span className="gb-badge">{ent}</span>
-            </h3>
-            <p className="gb-page-description mb-3">baseline · target · actuals · MoM change</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[12.5px]">
-                <thead>
-                  <tr style={{ color: 'var(--text-faint)' }}>
-                    <th className="text-left py-2 px-2.5 font-semibold uppercase text-[10.5px] tracking-wide">Metric</th>
-                    <th className="text-right py-2 px-2.5 font-semibold uppercase text-[10.5px] tracking-wide">Baseline</th>
-                    <th className="text-right py-2 px-2.5 font-semibold uppercase text-[10.5px] tracking-wide">Target</th>
-                    {model.labels.map((m) => (
-                      <th key={m} className="text-right py-2 px-2.5 font-semibold uppercase text-[10.5px] tracking-wide">{m}</th>
-                    ))}
-                    <th className="text-right py-2 px-2.5 font-semibold uppercase text-[10.5px] tracking-wide">MoM</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {METRIC_ROWS.map(({ label, key }) => {
-                    const d = D[key];
-                    if (!d) return null;
-                    const mom = momDelta(d.m[model.last], model.last > 0 ? d.m[model.last - 1] : null);
-                    return (
-                      <tr key={key} style={{ borderTop: '1px solid var(--border)' }}>
-                        <td className="text-left py-2 px-2.5">{label}</td>
-                        <td className="text-right py-2 px-2.5">{d.base == null ? '—' : d.pct ? d.base + '%' : fmtCompact(d.base)}</td>
-                        <td className="text-right py-2 px-2.5">{d.target == null ? '—' : d.pct ? d.target + '%' : fmtCompact(d.target)}</td>
-                        {d.m.map((v, i) => (
-                          <td key={i} className="text-right py-2 px-2.5" style={i === model.last ? { fontWeight: 700 } : undefined}>
-                            {fmtMetric(v, d)}
-                          </td>
-                        ))}
-                        <td
-                          className="text-right py-2 px-2.5"
-                          style={{ color: mom == null ? undefined : mom >= 0 ? 'var(--success)' : 'var(--error)', fontWeight: 600 }}
-                        >
-                          {mom == null ? '—' : (mom >= 0 ? '+' : '') + mom.toFixed(1) + '%'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-[11.5px] mt-3" style={{ color: 'var(--text-faint)' }}>
-              Live data from the database. Upload next month&apos;s file and this refreshes automatically.
-            </p>
-          </div>
+          <Section
+            title="Last year's close"
+            subtitle="FY24-25 against FY25-26 across SQY, INCO and Urban Money — including GEO"
+            right={<span className="text-[11.5px] inline-flex items-center gap-1" style={{ color: 'var(--text-faint)' }}>
+              <TrendingUp size={12} /> {yoy.length} comparisons
+            </span>}
+          >
+            {yoy.length ? <CompareTable rows={yoy} fromLabel="FY24-25" toLabel="FY25-26" />
+                        : <EmptyNote text="No year-on-year data." />}
+          </Section>
         </>
       )}
     </div>
