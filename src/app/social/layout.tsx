@@ -3,8 +3,6 @@ import AppLayout from '@/components/layout/AppLayout';
 import { usePathname } from 'next/navigation';
 
 const pageTitles: Record<string, string> = {
-  '/social/dashboard': 'Social Dashboard',
-  '/social/upload': 'Upload Metrics',
   '/social/calendar': 'Social Calendar',
   '/social/how-to-fetch': 'How to Fetch Data',
 };

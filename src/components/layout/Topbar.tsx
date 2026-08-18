@@ -18,15 +18,21 @@ const breadcrumbMap: Record<string, { section: string; sectionHref: string; labe
   '/design-ops/dashboard': { section: 'Design Ops', sectionHref: '/design-ops/dashboard', label: 'Dashboard' },
   '/design-ops/requests': { section: 'Design Ops', sectionHref: '/design-ops/dashboard', label: 'All Requests' },
   '/design-ops/downloads': { section: 'Design Ops', sectionHref: '/design-ops/dashboard', label: 'Downloads / Uploads' },
-  '/social/dashboard': { section: 'Social', sectionHref: '/social/dashboard', label: 'Dashboard' },
-  '/social/upload': { section: 'Social', sectionHref: '/social/dashboard', label: 'Upload Metrics' },
-  '/social/calendar': { section: 'Social', sectionHref: '/social/dashboard', label: 'Calendar' },
-  '/social/how-to-fetch': { section: 'Social', sectionHref: '/social/dashboard', label: 'How to fetch' },
-  '/performance/my': { section: 'Performance', sectionHref: '/performance/my', label: 'My Performance' },
-  '/performance/team': { section: 'Performance', sectionHref: '/performance/team', label: 'Team Performance' },
-  '/performance/change-requests': { section: 'Performance', sectionHref: '/performance/team', label: 'Change Requests' },
+  // Social used to point at /social/dashboard, which was one of the
+  // sample-data pages — a live crumb from the real calendar into invented
+  // numbers. It points at the calendar now, which is the only Social page in
+  // the sidebar.
+  '/social/calendar': { section: 'Social', sectionHref: '/social/calendar', label: 'Calendar' },
+  '/social/how-to-fetch': { section: 'Social', sectionHref: '/social/calendar', label: 'How to fetch' },
   '/overview': { section: 'Home', sectionHref: '/overview', label: 'Overview' },
   '/performance-data/monthly': { section: 'Performance Data', sectionHref: '/performance-data/monthly', label: 'Monthly close' },
+  '/performance-data/seo': { section: 'Performance Data', sectionHref: '/performance-data/monthly', label: 'SEO' },
+  '/performance-data/orm': { section: 'Performance Data', sectionHref: '/performance-data/monthly', label: 'ORM' },
+  '/performance-data/paid': { section: 'Performance Data', sectionHref: '/performance-data/monthly', label: 'Paid Campaigns' },
+  '/performance-data/social': { section: 'Performance Data', sectionHref: '/performance-data/monthly', label: 'Social (Hootsuite)' },
+  '/performance-data/upload': { section: 'Performance Data', sectionHref: '/performance-data/monthly', label: 'Upload Data' },
+  '/design-ops/my-tasks': { section: 'Design Ops', sectionHref: '/design-ops/dashboard', label: 'My Tasks' },
+  '/design-ops/reports': { section: 'Design Ops', sectionHref: '/design-ops/dashboard', label: 'Reports — Output & TAT' },
   '/user-management': { section: 'Admin', sectionHref: '/user-management', label: 'User Management' },
   '/admin/reset-passwords': { section: 'Admin', sectionHref: '/user-management', label: 'Reset Passwords' },
 };

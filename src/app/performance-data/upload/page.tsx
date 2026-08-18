@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { Upload, Download, FileText } from 'lucide-react';
+import { Upload, Download, FileText, BookOpen } from 'lucide-react';
+import Link from 'next/link';
 import { parsePerfCsv, upsertSeries, type SeriesRow } from '@/lib/perf-api';
 
 const TEMPLATE_CSV = [
@@ -80,6 +81,14 @@ export default function UploadDataPage() {
           <p className="text-[11.5px] mt-1" style={{ color: 'var(--text-faint)' }}>
             Rows are upserted by Domain + Entity + Metric + Month, so re-uploading a month updates it in place.
           </p>
+          {/* These instructions existed but were only reachable from the
+              sample-data pages, so the one page that needs them never
+              offered them. */}
+          <Link href="/social/how-to-fetch"
+                className="text-[12px] mt-2 inline-flex items-center gap-1.5"
+                style={{ color: 'var(--link)' }}>
+            <BookOpen size={13} /> How to fetch the numbers from Hootsuite
+          </Link>
         </div>
         <a href={templateHref} download="performance-data-template.csv" className="gb-btn gb-btn-secondary">
           <Download size={14} strokeWidth={2} />

@@ -3,9 +3,8 @@
 import { useState } from 'react';
 import Papa from 'papaparse';
 import { Request } from '@/types';
-import { SAMPLE_REQUESTS } from '@/lib/sample-data';
-import { createRequest } from '@/lib/requests-api';
-import { FileDown, Upload, CheckCircle, AlertCircle } from 'lucide-react';
+import { createRequest, fetchRequests } from '@/lib/requests-api';
+import { FileDown, Download, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface ImportRow {
   Type: string;
@@ -28,6 +27,7 @@ export default function DownloadsUploadsPage() {
   const [fileName, setFileName] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Generate CSV template
   const downloadTemplate = () => {
@@ -141,34 +141,52 @@ export default function DownloadsUploadsPage() {
     setTimeout(() => setStatusMessage(null), 6000);
   };
 
-  // Export all requests
-  const handleExportAll = () => {
-    const headers = ['Type', 'Requested By', 'Title', 'Description', 'Requestor', 'Need By', 'Reference Link'];
+  // Export all requests.
+  //
+  // This used to export SAMPLE_REQUESTS — the hardcoded demo rows — so
+  // "Export all requests" handed you a CSV of invented work rather than the
+  // team's. It reads the real table now.
+  const handleExportAll = async () => {
+    setIsExporting(true);
+    const headers = ['Type', 'Entity', 'Requested By', 'Title', 'Description',
+                     'Requestor', 'Need By', 'Stage', 'Reference Link'];
 
-    const rows = [
-      ...SAMPLE_REQUESTS.map(req => [
-        req.type,
-        req.requested_by,
-        req.title,
-        req.description || '',
-        req.requestor_name,
-        req.need_by,
-        req.reference_link || '',
-      ]),
-      ...importedRequests.map(req => [
-        req.type,
-        req.requested_by,
-        req.title,
-        req.description || '',
-        req.requestor_name,
-        req.need_by,
-        req.reference_link || '',
-      ]),
-    ];
+    let live: Request[] = [];
+    try {
+      live = await fetchRequests();
+    } catch (e) {
+      setStatusMessage({ type: 'error', message: 'Could not load requests to export: ' + (e instanceof Error ? e.message : String(e)) });
+      setTimeout(() => setStatusMessage(null), 6000);
+      setIsExporting(false);
+      return;
+    }
+
+    // Anything staged in this session but not yet saved is worth including,
+    // without listing it twice if it has already been created.
+    const seen = new Set(live.map((r) => r.id));
+    const rows = [...live, ...importedRequests.filter((r) => !seen.has(r.id))].map((req) => [
+      req.type,
+      (req as { entity?: string }).entity ?? '',
+      req.requested_by,
+      req.title,
+      req.description || '',
+      req.requestor_name,
+      req.need_by,
+      req.current_stage ?? '',
+      req.reference_link || '',
+    ]);
+
+    if (rows.length === 0) {
+      setStatusMessage({ type: 'error', message: 'There are no requests to export yet.' });
+      setTimeout(() => setStatusMessage(null), 4000);
+      setIsExporting(false);
+      return;
+    }
 
     const csv = [
       headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+      // Escape embedded quotes so a title containing one cannot break the row.
+      ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
     ].join('\n');
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -181,7 +199,8 @@ export default function DownloadsUploadsPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setStatusMessage({ type: 'success', message: 'Export completed successfully!' });
+    setStatusMessage({ type: 'success', message: `Exported ${rows.length} request${rows.length === 1 ? '' : 's'}.` });
+    setIsExporting(false);
     setTimeout(() => setStatusMessage(null), 3000);
   };
 
@@ -238,6 +257,20 @@ export default function DownloadsUploadsPage() {
               <FileDown size={14} />
               Download CSV Template
             </button>
+
+            {/* The export existed as a function but no button ever called it,
+                so a page called "Downloads" offered no way to get your own
+                data out. */}
+            <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: '1.5' }}>
+                Or export every request currently in Marketing Beats, with its entity and stage.
+              </p>
+              <button onClick={() => void handleExportAll()} disabled={isExporting}
+                      className="gb-btn gb-btn-secondary w-full">
+                <Download size={14} />
+                {isExporting ? 'Exporting…' : 'Export all requests'}
+              </button>
+            </div>
           </div>
 
           {/* Card 2: Upload Social Calendar */}

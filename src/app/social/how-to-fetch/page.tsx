@@ -166,7 +166,7 @@ export default function HowToFetchPage() {
             the left, follow the steps, then upload the file on the upload page.
           </p>
         </div>
-        <Link href="/social/upload" className="gb-btn gb-btn-primary">
+        <Link href="/performance-data/upload" className="gb-btn gb-btn-primary">
           <Upload size={14} strokeWidth={2.25} />
           Go to upload
         </Link>
