@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { listDbUsers, DbUserRow } from '@/lib/work-api';
+import { SLA_HOURS, BUSINESS_HOURS, calculateActiveTAT } from '@/lib/tat';
+import { RequestType, StageTransition } from '@/types';
 
 interface ReqRow {
   id: string; title: string; type: string; entity: string | null;
@@ -14,7 +16,10 @@ interface TransitionRow {
 interface CompletedItem {
   request: ReqRow;
   completedAt: string;
-  tatDays: number;
+  /** Active business hours, pauses excluded — the same measure the dashboard
+   *  and the request list already judge SLA by. */
+  tatHours: number;
+  withinSla: boolean;
 }
 
 const FINAL_STAGES = ['Done', 'Uploaded'];
@@ -69,11 +74,23 @@ export default function ReportsPage() {
       const final = trs.find((t) => FINAL_STAGES.includes(t.stage));
       if (!final) return;
       if (final.transitioned_at.slice(0, 7) !== month) return;
-      const tatMs = new Date(final.transitioned_at).getTime() - new Date(trs[0].transitioned_at).getTime();
+      // Was wall-clock elapsed between the first and last transition, which
+      // counted nights, weekends and time spent waiting on the requestor. The
+      // dashboard and the request list already score SLA on active business
+      // hours, so this reported a different number for the same request.
+      // Only the history up to delivery. Handing in transitions dated after
+      // `final` alongside asOf=final would measure intervals that run
+      // backwards, if a request were ever reopened after being completed.
+      const upToDelivery = trs
+        .filter((t) => t.transitioned_at <= final.transitioned_at)
+        .map((t) => ({ to_stage: t.stage, transitioned_at: t.transitioned_at })) as StageTransition[];
+      const tatHours = calculateActiveTAT(upToDelivery, final.transitioned_at);
+      const sla = SLA_HOURS[r.type as RequestType];
       items.push({
         request: r,
         completedAt: final.transitioned_at,
-        tatDays: Math.round((tatMs / 86400000) * 10) / 10,
+        tatHours,
+        withinSla: sla == null ? true : tatHours <= sla,
       });
     });
     return items;
@@ -85,7 +102,7 @@ export default function ReportsPage() {
     return m;
   }, [users]);
 
-  interface Agg { key: string; name: string; team: string; count: number; totalTat: number; }
+  interface Agg { key: string; name: string; team: string; count: number; totalTat: number; withinSla: number; }
 
   const perPerson = useMemo<Agg[]>(() => {
     const m = new Map<string, Agg>();
@@ -93,10 +110,11 @@ export default function ReportsPage() {
       const u = c.request.assigned_to ? usersById.get(c.request.assigned_to) : undefined;
       const key = u?.id ?? 'unassigned';
       const cur = m.get(key) ?? {
-        key, name: u?.name ?? 'Unassigned', team: u?.team ?? 'Unassigned', count: 0, totalTat: 0,
+        key, name: u?.name ?? 'Unassigned', team: u?.team ?? 'Unassigned', count: 0, totalTat: 0, withinSla: 0,
       };
       cur.count += 1;
-      cur.totalTat += c.tatDays;
+      cur.totalTat += c.tatHours;
+      if (c.withinSla) cur.withinSla += 1;
       m.set(key, cur);
     });
     return Array.from(m.values()).sort((a, b) => b.count - a.count);
@@ -107,9 +125,10 @@ export default function ReportsPage() {
     completed.forEach((c) => {
       const u = c.request.assigned_to ? usersById.get(c.request.assigned_to) : undefined;
       const team = u?.team ?? 'Unassigned';
-      const cur = m.get(team) ?? { key: team, name: team, team, count: 0, totalTat: 0 };
+      const cur = m.get(team) ?? { key: team, name: team, team, count: 0, totalTat: 0, withinSla: 0 };
       cur.count += 1;
-      cur.totalTat += c.tatDays;
+      cur.totalTat += c.tatHours;
+      if (c.withinSla) cur.withinSla += 1;
       m.set(team, cur);
     });
     return Array.from(m.values()).sort((a, b) => b.count - a.count);
@@ -117,8 +136,10 @@ export default function ReportsPage() {
 
   const totalCompleted = completed.length;
   const avgTat = totalCompleted
-    ? (completed.reduce((s, c) => s + c.tatDays, 0) / totalCompleted).toFixed(1)
+    ? (completed.reduce((s, c) => s + c.tatHours, 0) / totalCompleted).toFixed(1)
     : '—';
+  const slaMet = completed.filter((c) => c.withinSla).length;
+  const slaPct = totalCompleted ? Math.round((slaMet / totalCompleted) * 100) : null;
   const activePeople = perPerson.filter((p) => p.key !== 'unassigned').length;
 
   const renderTable = (rows: Agg[], firstCol: string, showTeam: boolean) => (
@@ -131,7 +152,8 @@ export default function ReportsPage() {
               <th className="text-left py-2.5 px-3 font-semibold uppercase text-[10.5px] tracking-wide">Team</th>
             )}
             <th className="text-right py-2.5 px-3 font-semibold uppercase text-[10.5px] tracking-wide">Completed</th>
-            <th className="text-right py-2.5 px-4 font-semibold uppercase text-[10.5px] tracking-wide">Avg TAT (days)</th>
+            <th className="text-right py-2.5 px-3 font-semibold uppercase text-[10.5px] tracking-wide">Avg TAT (bus. hrs)</th>
+            <th className="text-right py-2.5 px-4 font-semibold uppercase text-[10.5px] tracking-wide">Within SLA</th>
           </tr>
         </thead>
         <tbody>
@@ -140,7 +162,12 @@ export default function ReportsPage() {
               <td className="py-2.5 px-4" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{r.name}</td>
               {showTeam && <td className="py-2.5 px-3">{r.team}</td>}
               <td className="py-2.5 px-3 text-right">{r.count}</td>
-              <td className="py-2.5 px-4 text-right">{(r.totalTat / r.count).toFixed(1)}</td>
+              <td className="py-2.5 px-3 text-right tabular-nums">{(r.totalTat / r.count).toFixed(1)}</td>
+              <td className="py-2.5 px-4 text-right tabular-nums"
+                  style={{ color: r.withinSla === r.count ? 'var(--success)'
+                          : r.withinSla / r.count < 0.5 ? 'var(--error)' : 'var(--text-primary)' }}>
+                {r.withinSla}/{r.count} · {Math.round((r.withinSla / r.count) * 100)}%
+              </td>
             </tr>
           ))}
         </tbody>
@@ -168,11 +195,21 @@ export default function ReportsPage() {
 
       {!loading && !err && (
         <>
+          <p className="text-[11.5px] mb-4" style={{ color: 'var(--text-faint)' }}>
+            TAT counts active business hours only ({BUSINESS_HOURS.startHour}:00–{BUSINESS_HOURS.endHour}:00, Mon–Fri),
+            excluding time parked in Content, Change Req or Shooting Scheduled.
+            SLA: Graphics {SLA_HOURS.Graphics}h · Social Media Graphics {SLA_HOURS['Social Media Graphics']}h · Video {SLA_HOURS.Video}h.
+          </p>
+
           {/* Stat strip */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             {[
               { label: 'Total completed', value: String(totalCompleted) },
-              { label: 'Avg TAT (days)', value: String(avgTat) },
+              { label: 'Avg TAT (bus. hrs)', value: String(avgTat) },
+              // The point of the page: a TAT figure means nothing without the
+              // target beside it. SLA_HOURS already existed and was already
+              // used per-request; it just never reached the manager's view.
+              { label: 'Within SLA', value: slaPct == null ? '—' : `${slaPct}%` },
               { label: 'Active people', value: String(activePeople) },
             ].map((s) => (
               <div key={s.label} className="gb-card p-4">
