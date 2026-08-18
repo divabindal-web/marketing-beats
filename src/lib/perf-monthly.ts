@@ -230,15 +230,113 @@ export interface MonthStatus {
   month: string;
   state: 'open' | 'submitted' | 'reviewed';
   submitted_at: string | null;
+  owner_id: string | null;
+  owner_name: string | null;
+  due_on: string | null;
 }
+
+/**
+ * The close went stale in the sheet because no month of no domain belonged to
+ * anyone in particular. An owner answers "who", a due date answers "by when",
+ * and `standingOf` below turns the pair into the one thing worth showing.
+ *
+ * Convention is the 5th of the following month, stored per row rather than
+ * derived so a particular month can be given more or less room.
+ */
+export const defaultDueOn = (month: string) => {
+  const [y, m] = month.split('-').map(Number);
+  return monthKey(new Date(y, m, 1)).slice(0, 8) + '05';
+};
+
+export type Standing = 'signed-off' | 'overdue' | 'due-soon' | 'open' | 'unassigned';
+
+/** `today` is passed in so callers can be tested and so the caller's timezone
+ *  decides what "today" means, not the module's load time. */
+export function standingOf(st: MonthStatus | undefined, today: string): Standing {
+  if (st && st.state !== 'open') return 'signed-off';
+  const due = st?.due_on ?? null;
+  if (!st?.owner_id) return due && due < today ? 'overdue' : 'unassigned';
+  if (!due) return 'open';
+  if (due < today) return 'overdue';
+  const days = Math.round((Date.parse(due) - Date.parse(today)) / 86_400_000);
+  return days <= 3 ? 'due-soon' : 'open';
+}
+
+export const todayKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+export const dueLabel = (due: string | null) =>
+  due ? new Date(due + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric', month: 'short' }) : '—';
 
 export async function fetchMonthStatuses(month: string): Promise<MonthStatus[]> {
   const { data, error } = await supabase
     .from('perf_month_status')
-    .select('domain, month, state, submitted_at')
+    .select('domain, month, state, submitted_at, owner_id, due_on, owner:users!perf_month_status_owner_id_fkey(name)')
     .eq('month', month);
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => ({ ...r, month: String(r.month).slice(0, 10) })) as MonthStatus[];
+  type Raw = Omit<MonthStatus, 'owner_name'> & { owner?: { name: string } | { name: string }[] | null };
+  return ((data ?? []) as unknown as Raw[]).map((r) => {
+    const o = Array.isArray(r.owner) ? r.owner[0] : r.owner;
+    return {
+      domain: r.domain,
+      month: String(r.month).slice(0, 10),
+      state: r.state,
+      submitted_at: r.submitted_at,
+      owner_id: r.owner_id ?? null,
+      owner_name: o?.name ?? null,
+      due_on: r.due_on ? String(r.due_on).slice(0, 10) : null,
+    };
+  });
+}
+
+/** Assign (or clear) the person responsible for closing one domain-month.
+ *  `state` is left out of the payload deliberately: it defaults to 'open' on
+ *  insert, and omitting it means reassigning an owner cannot undo a sign-off. */
+export async function setMonthOwner(
+  domain: Domain,
+  month: string,
+  ownerId: string | null,
+): Promise<void> {
+  // Seed the due date on first assignment, but never overwrite one that has
+  // already been set by hand.
+  const { data: existing } = await supabase
+    .from('perf_month_status')
+    .select('due_on')
+    .eq('domain', domain).eq('month', month)
+    .maybeSingle();
+
+  const { error } = await supabase.from('perf_month_status').upsert(
+    {
+      domain,
+      month,
+      owner_id: ownerId,
+      due_on: existing?.due_on ?? defaultDueOn(month),
+    },
+    { onConflict: 'domain,month' },
+  );
+  if (error) throw new Error(error.message);
+}
+
+export async function setMonthDue(domain: Domain, month: string, dueOn: string | null): Promise<void> {
+  const { error } = await supabase.from('perf_month_status').upsert(
+    { domain, month, due_on: dueOn },
+    { onConflict: 'domain,month' },
+  );
+  if (error) throw new Error(error.message);
+}
+
+export interface Assignee { id: string; name: string }
+
+export async function fetchAssignees(): Promise<Assignee[]> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, name')
+    .eq('is_active', true)
+    .order('name');
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Assignee[];
 }
 
 export async function setMonthState(

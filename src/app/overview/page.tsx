@@ -25,7 +25,8 @@ import { isFinal, isOverdue, getInitials } from '@/lib/sample-data';
 import { Request } from '@/types';
 import { DirectoryUser, findInDirectory, useDirectory } from '@/lib/directory';
 import {
-  Domain, DOMAIN_LABEL, MonthView, defaultMonth, fetchMonth, monthLabel,
+  Domain, DOMAIN_LABEL, MonthStatus, MonthView, defaultMonth, dueLabel, fetchMonth,
+  fetchMonthStatuses, monthLabel, standingOf, todayKey,
 } from '@/lib/perf-monthly';
 import { useCurrentUser } from '@/components/layout/CurrentUserContext';
 import { currentDbUser } from '@/lib/work-api';
@@ -42,7 +43,9 @@ export default function OverviewPage() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [views, setViews] = useState<Partial<Record<Domain, MonthView>>>({});
   const [teamIds, setTeamIds] = useState<Set<string> | null>(null);
+  const [statuses, setStatuses] = useState<MonthStatus[]>([]);
   const month = defaultMonth();
+  const today = useMemo(() => todayKey(), []);
 
   // `me` decides which of the three pages this is, so the role must be known
   // before anything renders. Defaulting to 'member' while it loads flashed the
@@ -65,6 +68,7 @@ export default function OverviewPage() {
     Promise.all(DOMAINS.map((d) => fetchMonth(d, month)))
       .then(([orm, seo, social]) => setViews({ orm, seo, social }))
       .catch(() => {});
+    fetchMonthStatuses(month).then(setStatuses).catch(() => {});
   }, [month]);
 
   // A lead's world is their own team, in both id spaces.
@@ -117,6 +121,22 @@ export default function OverviewPage() {
   const totalMissing = closeSummary.reduce((s, c) => s + (c.missing ?? 0), 0);
   const totalOff = closeSummary.reduce((s, c) => s + c.off, 0);
 
+  const statusFor = (d: Domain) => statuses.find((s) => s.domain === d);
+
+  /** Close work assigned to this person. Members otherwise had no way to learn
+   *  they owned a domain-month — the assignment lived only on a page they had
+   *  no reason to open. */
+  const myCloses = useMemo(
+    () => DOMAINS
+      .map((d) => ({ domain: d, st: statusFor(d) }))
+      .filter((x) => !!x.st?.owner_id && x.st.owner_id === me?.id)
+      .map((x) => ({ ...x, standing: standingOf(x.st, today), view: views[x.domain] })),
+    [statuses, me, views, today],
+  );
+  const overdueCloses = DOMAINS
+    .map((d) => ({ domain: d, st: statusFor(d) }))
+    .filter((x) => standingOf(x.st, today) === 'overdue');
+
   const greeting = new Date().getHours() < 12 ? 'Good morning'
     : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
   const firstName = (me?.name ?? currentUser?.name ?? '').split(' ')[0];
@@ -160,13 +180,57 @@ export default function OverviewPage() {
           : <Kpi label="Below target" value={String(totalOff)} tone={totalOff ? 'error' : 'success'} sub={monthLabel(month)} />}
       </div>
 
+      {/* ---------- close work assigned to me (any role) ---------- */}
+      {myCloses.length > 0 && (
+        <Section
+          title="Your close assignments"
+          subtitle={`${DOMAIN_LABEL[myCloses[0].domain]}${myCloses.length > 1 ? ` and ${myCloses.length - 1} more` : ''} for ${monthLabel(month)}`}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {myCloses.map(({ domain, st, standing, view }) => {
+              const missing = view ? view.total - view.filled : null;
+              const tone = standing === 'overdue' ? 'var(--error)'
+                : standing === 'due-soon' ? 'var(--warning)' : 'var(--text-faint)';
+              return (
+                <Link key={domain} href="/performance-data/monthly" className="gb-card gb-card-hover p-4 block"
+                      style={standing === 'overdue' ? { borderColor: 'var(--error)' } : undefined}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      {DOMAIN_LABEL[domain]}
+                    </span>
+                    {standing === 'overdue' ? <span className="gb-badge gb-badge-red">Overdue</span>
+                      : standing === 'due-soon' ? <span className="gb-badge gb-badge-yellow">Due soon</span>
+                      : standing === 'signed-off' ? <span className="gb-badge gb-badge-green">Signed off</span>
+                      : null}
+                  </div>
+                  <div className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+                    {missing === null ? 'Loading…'
+                      : missing === 0 ? 'Every number is in — ready to sign off'
+                      : `${missing} value${missing === 1 ? '' : 's'} still to enter`}
+                  </div>
+                  {st?.due_on && (
+                    <div className="text-[11.5px] mt-1.5" style={{ color: tone }}>
+                      {standing === 'overdue' ? 'Was due ' : 'Due '}{dueLabel(st.due_on)}
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        </Section>
+      )}
+
       {/* ---------- the month (admin + lead) ---------- */}
       {role !== 'member' && (
         <Section
           title={`The month — ${monthLabel(month)}`}
-          subtitle={totalMissing > 0
-            ? `${totalMissing} value${totalMissing === 1 ? '' : 's'} still to enter across ORM, SEO and Social`
-            : 'Every number is in'}
+          subtitle={
+            overdueCloses.length > 0
+              ? `${overdueCloses.length} domain${overdueCloses.length === 1 ? ' is' : 's are'} past their due date · ${totalMissing} value${totalMissing === 1 ? '' : 's'} still to enter`
+              : totalMissing > 0
+                ? `${totalMissing} value${totalMissing === 1 ? '' : 's'} still to enter across ORM, SEO and Social`
+                : 'Every number is in'
+          }
           right={<Link href="/performance-data/monthly" className="gb-btn gb-btn-secondary">
             <CalendarCheck size={14} /> Open monthly close
           </Link>}
@@ -194,6 +258,26 @@ export default function OverviewPage() {
                   <div className="h-full rounded-full transition-[width] duration-500"
                        style={{ width: `${c.pct}%`, backgroundColor: c.ready ? 'var(--success)' : 'var(--brand)' }} />
                 </div>
+                {(() => {
+                  const st = statusFor(c.domain);
+                  const standing = standingOf(st, today);
+                  if (standing === 'signed-off') return null;
+                  const tone = standing === 'overdue' ? 'var(--error)'
+                    : standing === 'due-soon' ? 'var(--warning)' : 'var(--text-faint)';
+                  return (
+                    <div className="text-[11.5px] mt-2 flex items-center gap-1.5" style={{ color: tone }}>
+                      <span style={{ color: st?.owner_name ? 'var(--text-secondary)' : 'var(--text-faint)' }}>
+                        {st?.owner_name ?? 'Unassigned'}
+                      </span>
+                      {st?.due_on && (
+                        <>
+                          <span style={{ color: 'var(--border)' }}>·</span>
+                          <span>{standing === 'overdue' ? 'was due ' : 'due '}{dueLabel(st.due_on)}</span>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </Link>
             ))}
           </div>

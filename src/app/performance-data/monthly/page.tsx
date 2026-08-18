@@ -10,11 +10,12 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ArrowLeft, ArrowRight, Check, CircleDashed, ExternalLink, Loader2,
+  AlertTriangle, ArrowLeft, ArrowRight, Check, CircleDashed, ExternalLink, Loader2, UserPlus,
 } from 'lucide-react';
 import {
-  Cell, Domain, DOMAIN_LABEL, MonthStatus, MonthView, defaultMonth, fetchMonth,
-  fetchMonthStatuses, monthLabel, saveCell, setMonthState, shiftMonth, shortMonth, statusOf,
+  Assignee, Cell, Domain, DOMAIN_LABEL, MonthStatus, MonthView, defaultMonth, dueLabel,
+  fetchAssignees, fetchMonth, fetchMonthStatuses, monthLabel, saveCell, setMonthDue,
+  setMonthOwner, setMonthState, shiftMonth, shortMonth, standingOf, statusOf, todayKey,
 } from '@/lib/perf-monthly';
 import { useCurrentUser } from '@/components/layout/CurrentUserContext';
 import { currentDbUser } from '@/lib/work-api';
@@ -39,6 +40,10 @@ export default function MonthlyClosePage() {
   const [err, setErr] = useState('');
   const [onlyGaps, setOnlyGaps] = useState(false);
   const [me, setMe] = useState<{ id: string; role: string; is_lead: boolean } | null>(null);
+  const [assignees, setAssignees] = useState<Assignee[]>([]);
+  const today = useMemo(() => todayKey(), []);
+
+  useEffect(() => { fetchAssignees().then(setAssignees).catch(() => {}); }, []);
 
   useEffect(() => { currentDbUser().then((m) => setMe(m ? { id: m.id, role: m.role, is_lead: m.is_lead } : null)).catch(() => {}); }, []);
 
@@ -66,7 +71,27 @@ export default function MonthlyClosePage() {
   useEffect(() => { void load(); }, [load]);
 
   const view = views[domain];
-  const stateOf = (d: Domain) => statuses.find((s) => s.domain === d)?.state ?? 'open';
+  const statusFor = (d: Domain) => statuses.find((s) => s.domain === d);
+  const stateOf = (d: Domain) => statusFor(d)?.state ?? 'open';
+
+  /** Owner and due date are a lead/CMO call, same gate as signing off. */
+  const assignOwner = async (d: Domain, ownerId: string | null) => {
+    try {
+      await setMonthOwner(d, month, ownerId);
+      setStatuses(await fetchMonthStatuses(month));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not set the owner');
+    }
+  };
+
+  const assignDue = async (d: Domain, due: string | null) => {
+    try {
+      await setMonthDue(d, month, due);
+      setStatuses(await fetchMonthStatuses(month));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not set the due date');
+    }
+  };
 
   /** Optimistic write: the grid is a lot of small edits, waiting on each would
    *  make it feel like the spreadsheet it is replacing. */
@@ -180,9 +205,82 @@ export default function MonthlyClosePage() {
                   <AlertTriangle size={11} /> {v.offTarget} below target
                 </div>
               )}
+              {/* Who owes this and by when. Text only — editing lives in the
+                  strip below, since a <button> cannot hold a <select>. */}
+              {(() => {
+                const st = statusFor(d);
+                const standing = standingOf(st, today);
+                if (standing === 'signed-off') return null;
+                const tone =
+                  standing === 'overdue' ? 'var(--error)'
+                  : standing === 'due-soon' ? 'var(--warning)'
+                  : 'var(--text-faint)';
+                return (
+                  <div className="text-[11.5px] mt-2 flex items-center gap-1.5" style={{ color: tone }}>
+                    <span style={{ color: st?.owner_name ? 'var(--text-secondary)' : 'var(--text-faint)' }}>
+                      {st?.owner_name ?? 'Unassigned'}
+                    </span>
+                    {st?.due_on && (
+                      <>
+                        <span style={{ color: 'var(--border)' }}>·</span>
+                        <span>
+                          {standing === 'overdue' ? 'was due ' : 'due '}{dueLabel(st.due_on)}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
             </button>
           );
         })}
+      </div>
+
+      {/* Owner & due date for the selected domain. A domain-month with nobody
+          against it is exactly how the sheet went stale, so this sits above
+          the grid rather than behind a settings screen. */}
+      <div className="gb-card p-3 mb-4 flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <UserPlus size={14} style={{ color: 'var(--text-faint)' }} />
+          <span className="text-[12px]" style={{ color: 'var(--text-secondary)' }}>Owner</span>
+          {canSignOff ? (
+            <select
+              className="gb-input py-1 text-[12.5px]"
+              style={{ minWidth: 170 }}
+              value={statusFor(domain)?.owner_id ?? ''}
+              onChange={(e) => assignOwner(domain, e.target.value || null)}
+            >
+              <option value="">— Unassigned —</option>
+              {assignees.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          ) : (
+            <span className="text-[12.5px] font-medium" style={{ color: 'var(--text-primary)' }}>
+              {statusFor(domain)?.owner_name ?? 'Unassigned'}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px]" style={{ color: 'var(--text-secondary)' }}>Due</span>
+          {canSignOff ? (
+            <input
+              type="date"
+              className="gb-input py-1 text-[12.5px]"
+              value={statusFor(domain)?.due_on ?? ''}
+              onChange={(e) => assignDue(domain, e.target.value || null)}
+            />
+          ) : (
+            <span className="text-[12.5px] font-medium" style={{ color: 'var(--text-primary)' }}>
+              {dueLabel(statusFor(domain)?.due_on ?? null)}
+            </span>
+          )}
+        </div>
+        {(() => {
+          const standing = standingOf(statusFor(domain), today);
+          if (standing === 'overdue') return <span className="gb-badge gb-badge-red">Overdue</span>;
+          if (standing === 'due-soon') return <span className="gb-badge gb-badge-yellow">Due soon</span>;
+          if (standing === 'signed-off') return <span className="gb-badge gb-badge-green">Signed off</span>;
+          return null;
+        })()}
       </div>
 
       {/* Grid */}
