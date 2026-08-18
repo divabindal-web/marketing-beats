@@ -440,6 +440,19 @@ function CellInput({ cell, prevLabel, suggestion, onSave }: {
         {cell.prev != null ? `${prevLabel} ${fmt(cell.prev, cell.is_pct)}` : ' '}
         {cell.target != null ? ` · target ${fmt(cell.target, cell.is_pct)}` : ''}
       </div>
+      {/* Design Ops already counted this one. Offered, never auto-written —
+          the plan is a number someone signs their name to. */}
+      {suggestion != null && suggestion !== cell.value && (
+        <button
+          type="button"
+          onClick={() => { setDraft(String(suggestion)); onSave(String(suggestion)); }}
+          className="text-[10.5px] mt-0.5 tabular-nums underline block ml-auto"
+          style={{ color: 'var(--link)' }}
+          title="Video requests that reached Uploaded this month"
+        >
+          Design Ops: {suggestion}
+        </button>
+      )}
     </td>
   );
 }
