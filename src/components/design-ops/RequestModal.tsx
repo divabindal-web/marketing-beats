@@ -85,7 +85,12 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
   const [formData, setFormData] = useState({
     type: 'Graphics' as RequestType,
     requestedBy: 'Social Team' as const,
-    entity: 'SQY' as Entity,
+    // Was pre-set to SQY. The field is marked required, but a default meant
+    // it could never be empty, so nobody ever had to choose — and a request
+    // that nobody thought about looked identical to a deliberate SQY one.
+    // Entity decides which brand the work counts towards, so the choice is
+    // now explicit.
+    entity: '' as Entity | '',
     title: '',
     description: '',
     needBy: '',
@@ -113,6 +118,9 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
 
+    if (!formData.entity) {
+      newErrors.entity = 'Pick the entity this work belongs to';
+    }
     if (!formData.title.trim()) {
       newErrors.title = 'Title is required';
     }
@@ -148,7 +156,7 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
     const newRequest: Partial<Request> = {
       type: formData.type,
       requested_by: formData.requestedBy as any,
-      entity: formData.entity,
+      entity: formData.entity || undefined,   // validate() has already rejected empty
       title: formData.title,
       description: formData.description || undefined,
       requestor_name: currentUser?.name ?? (email ? email.split('@')[0] : 'Unknown'),
@@ -165,11 +173,12 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
 
     onSave(newRequest);
 
-    // Reset form
+    // Reset form. Entity clears too — leaving it set would quietly re-introduce
+    // the default for every request after the first.
     setFormData({
       type: 'Graphics',
       requestedBy: 'Social Team',
-      entity: 'SQY',
+      entity: '',
       title: '',
       description: '',
       needBy: '',
@@ -184,7 +193,7 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
     return null;
   }
 
-  const isSubmitDisabled = !formData.title.trim() || !formData.needBy;
+  const isSubmitDisabled = !formData.title.trim() || !formData.needBy || !formData.entity;
 
   return createPortal(
     <>
@@ -248,13 +257,18 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
                 value={formData.entity}
                 onChange={handleChange}
                 className="w-full input-base"
+                style={errors.entity ? { borderColor: 'var(--error)' } : undefined}
               >
+                <option value="">— Select entity —</option>
                 {ENTITIES.map((e) => (
                   <option key={e} value={e}>
                     {e}
                   </option>
                 ))}
               </select>
+              {errors.entity && (
+                <p className="text-xs text-[var(--error)] mt-1">{errors.entity}</p>
+              )}
             </div>
 
             {/* Assign to lead (admin) or team member (lead); hidden for members */}
@@ -344,6 +358,14 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
               />
               {errors.needBy && (
                 <p className="text-xs text-[var(--error)] mt-1">{errors.needBy}</p>
+              )}
+              {/* Not blocked — logging something already due is legitimate —
+                  but it should not be a surprise that it arrives overdue. */}
+              {!errors.needBy && formData.needBy &&
+                formData.needBy < new Date().toISOString().slice(0, 10) && (
+                <p className="text-xs mt-1" style={{ color: 'var(--warning)' }}>
+                  That date has passed — this will be created already overdue.
+                </p>
               )}
             </div>
 
