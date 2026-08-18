@@ -226,7 +226,7 @@ export default function OverviewPage() {
           title={`The month — ${monthLabel(month)}`}
           subtitle={
             overdueCloses.length > 0
-              ? `${overdueCloses.length} domain${overdueCloses.length === 1 ? ' is' : 's are'} past their due date · ${totalMissing} value${totalMissing === 1 ? '' : 's'} still to enter`
+              ? `${overdueCloses.length} domain${overdueCloses.length === 1 ? ' is past its' : 's are past their'} due date · ${totalMissing} value${totalMissing === 1 ? '' : 's'} still to enter`
               : totalMissing > 0
                 ? `${totalMissing} value${totalMissing === 1 ? '' : 's'} still to enter across ORM, SEO and Social`
                 : 'Every number is in'
