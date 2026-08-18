@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, AlertTriangle, CheckCircle2, ChevronRight, Inbox } from 'lucide-react';
 import { Request } from '@/types';
 import { fetchRequests, updateRequest } from '@/lib/requests-api';
+import { SLA_HOURS, calculateActiveTAT } from '@/lib/tat';
+import { RequestType } from '@/types';
 import { formatDate, getDaysUntilDue } from '@/lib/sample-data';
 import { useDirectory } from '@/lib/directory';
 import { useRequestsRealtime } from '@/lib/use-requests-realtime';
@@ -60,11 +62,37 @@ export default function MyTasksPage() {
   );
 
   const today = new Date().toISOString().slice(0, 10);
+
+  /**
+   * How much of this request's SLA has been spent, in active business hours.
+   * The dashboard already ranks work this way for whoever is watching the
+   * team; the person actually doing it saw an unordered list.
+   */
+  const slaUseOf = useCallback((r: Request) => {
+    const sla = SLA_HOURS[r.type as RequestType];
+    if (!sla) return null;
+    const used = calculateActiveTAT(r.transitions ?? []);
+    return { used, sla, ratio: used / sla };
+  }, []);
+
+  // Most SLA spent first, so the top of the list is what to pick up next.
+  // need_by breaks ties, since two untouched requests both sit at zero.
+  const byUrgency = useCallback((a: Request, b: Request) => {
+    const ra = slaUseOf(a)?.ratio ?? 0;
+    const rb = slaUseOf(b)?.ratio ?? 0;
+    if (rb !== ra) return rb - ra;
+    return (a.need_by ?? '9999-12-31').localeCompare(b.need_by ?? '9999-12-31');
+  }, [slaUseOf]);
+
   const buckets = useMemo(() => ({
-    upcoming: mine.filter((r) => !FINAL_STAGES.includes(r.current_stage) && (!r.need_by || r.need_by >= today)),
-    overdue: mine.filter((r) => !FINAL_STAGES.includes(r.current_stage) && r.need_by != null && r.need_by < today),
+    upcoming: mine
+      .filter((r) => !FINAL_STAGES.includes(r.current_stage) && (!r.need_by || r.need_by >= today))
+      .sort(byUrgency),
+    overdue: mine
+      .filter((r) => !FINAL_STAGES.includes(r.current_stage) && r.need_by != null && r.need_by < today)
+      .sort((a, b) => (a.need_by ?? '').localeCompare(b.need_by ?? '')),
     completed: mine.filter((r) => FINAL_STAGES.includes(r.current_stage)),
-  }), [mine, today]);
+  }), [mine, today, byUrgency]);
 
   const openTask = (r: Request) => { setSelected(r); setPanelOpen(true); };
   const handleUpdate = (updated: Request) => {
@@ -153,6 +181,14 @@ export default function MyTasksPage() {
         </div>
       )}
 
+      {!loading && list.length > 0 && tab === 'upcoming' && (
+        <p className="text-[11.5px] mb-2" style={{ color: 'var(--text-faint)' }}>
+          Ordered by how much of each request&apos;s turnaround target has been used, so the
+          most pressing is first. Counts working hours only, and pauses while a request waits
+          on content, a shoot or review feedback.
+        </p>
+      )}
+
       {!loading && list.length > 0 && (
         <div className="gb-card p-0 overflow-hidden mb-stagger">
           {list.map((r, i) => {
@@ -177,6 +213,27 @@ export default function MyTasksPage() {
                   </div>
                 </div>
                 <span className={`gb-badge ${stagePill(r.current_stage, late)} flex-shrink-0`}>{r.current_stage}</span>
+                {/* SLA spent, in active business hours. Shown as a bar because
+                    the useful question is "how much room is left", not the
+                    raw number. Hidden once the work is done. */}
+                {(() => {
+                  const u = tab === 'completed' ? null : slaUseOf(r);
+                  if (!u) return <div className="flex-shrink-0" style={{ width: 78 }} />;
+                  const pct = Math.min(100, Math.round(u.ratio * 100));
+                  const tone = u.ratio >= 1 ? 'var(--error)'
+                    : u.ratio >= 0.75 ? 'var(--warning)' : 'var(--success)';
+                  return (
+                    <div className="flex-shrink-0" style={{ width: 78 }}
+                         title={`${u.used.toFixed(1)} of ${u.sla} business hours used`}>
+                      <div className="text-[10px] font-semibold tabular-nums text-right" style={{ color: tone }}>
+                        {u.ratio >= 1 ? 'SLA passed' : `${pct}% of SLA`}
+                      </div>
+                      <div className="h-1 w-full rounded-full mt-1 overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: tone }} />
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="text-right flex-shrink-0" style={{ width: 96 }}>
                   <div className="text-[12px] font-medium" style={{ color: late ? 'var(--error)' : 'var(--text-secondary)' }}>
                     {r.need_by ? formatDate(r.need_by) : '—'}
