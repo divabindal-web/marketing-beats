@@ -77,16 +77,22 @@ export default function SeoPage() {
   }, [data]);
 
   // Headline: the most recent month with a value for the selected vertical.
+  // Metrics are matched by exact name — an earlier version used startsWith,
+  // which made "Organic Lead Volume" match the "... Share %" row first and
+  // render a blank tile.
   const kpis = useMemo(() => {
     if (!trend.months.length) return null;
     const last = trend.months[trend.months.length - 1];
     const prev = trend.months[trend.months.length - 2];
-    const pick = (m: string) => trend.rows.find((r) => r.metric.startsWith(m));
-    const traffic = pick('Traffic');
-    const leads = pick('Organic Lead Volume') && !pick('Organic Lead Volume')!.isPct ? pick('Organic Lead Volume') : undefined;
-    const share = trend.rows.find((r) => r.isPct);
-    const rev = pick('Revenue');
-    return { last, prev, traffic, leads, share, rev };
+    const row = (name: string) => trend.rows.find((r) => r.metric === name);
+    return {
+      last,
+      prev,
+      traffic: row('Traffic (Clicks)') ?? row('Traffic (Sessions)'),
+      leads: row('Organic Lead Volume') ?? row('LLM Lead Volume'),
+      share: row('Organic Lead Volume Share %'),
+      rev: row('Revenue from Organic Leads (Cr)'),
+    };
   }, [trend]);
 
   return (
