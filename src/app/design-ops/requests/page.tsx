@@ -49,7 +49,13 @@ function AllRequestsPageInner() {
   const [sortAscending, setSortAscending] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
-  const [currentMonth, setCurrentMonth] = useState(new Date('2026-04-01'));
+  // Opened on a hardcoded April 2026 — four months before today by the time
+  // anyone used it — so the Calendar tab always landed on an empty month and
+  // looked like it had no data.
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
   const [draggedRequest, setDraggedRequest] = useState<Request | null>(null);
 
   const handleOpenRequest = (req: Request) => {
