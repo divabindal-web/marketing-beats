@@ -544,7 +544,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[12px] inline-flex items-center gap-1 hover:underline"
-                    style={{ color: 'var(--accent)' }}
+                    style={{ color: 'var(--link)' }}
                   >
                     Link <ExternalLink size={10} />
                   </a>
@@ -771,7 +771,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex-1 min-w-0 truncate hover:underline"
-                        style={{ color: 'var(--accent)' }}
+                        style={{ color: 'var(--link)' }}
                       >
                         {a.file_name}
                       </a>

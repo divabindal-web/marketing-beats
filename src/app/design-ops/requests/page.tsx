@@ -297,7 +297,7 @@ function AllRequestsPageInner() {
               return (
                 <tr key={req.id} style={{ backgroundColor: isRowOverdue ? 'var(--error-bg)' : 'transparent' }}>
                   <td
-                    style={{ fontWeight: 500, color: 'var(--accent)', cursor: 'pointer' }}
+                    style={{ fontWeight: 500, color: 'var(--link)', cursor: 'pointer' }}
                     onClick={() => handleOpenRequest(req)}
                   >
                     {req.title}

@@ -306,7 +306,7 @@ function IndividualDashboard({
           <h2 className="gb-section-title" style={{ marginBottom: 0 }}>
             Priority queue
           </h2>
-          <Link href="/design-ops/requests" className="text-[12px] inline-flex items-center gap-1 hover:underline" style={{ color: 'var(--accent)' }}>
+          <Link href="/design-ops/requests" className="text-[12px] inline-flex items-center gap-1 hover:underline" style={{ color: 'var(--link)' }}>
             View all <ArrowRight size={10} />
           </Link>
         </div>
@@ -334,7 +334,7 @@ function IndividualDashboard({
                   const isOvd = isOverdue(req);
                   return (
                     <tr key={req.id} onClick={() => onOpen(req)} style={{ cursor: 'pointer', backgroundColor: isOvd ? 'var(--error-bg)' : 'transparent' }}>
-                      <td style={{ fontWeight: 500, color: 'var(--accent)' }}>{req.title}</td>
+                      <td style={{ fontWeight: 500, color: 'var(--link)' }}>{req.title}</td>
                       <td><span className="gb-badge gb-badge-blue">{req.type === 'Social Media Graphics' ? 'SMG' : req.type}</span></td>
                       <td><span className={`gb-badge ${isOvd ? 'gb-badge-red' : 'gb-badge-blue'}`}>{req.current_stage}</span></td>
                       <td style={{ color: isOvd ? 'var(--error)' : 'var(--text-secondary)', fontWeight: 500 }}>
@@ -377,7 +377,7 @@ function IndividualDashboard({
                   const isOvd = isOverdue(req);
                   return (
                     <tr key={req.id} onClick={() => onOpen(req)} style={{ cursor: 'pointer' }}>
-                      <td style={{ fontWeight: 500, color: 'var(--accent)' }}>{req.title}</td>
+                      <td style={{ fontWeight: 500, color: 'var(--link)' }}>{req.title}</td>
                       <td style={{ color: 'var(--text-secondary)' }}>{assignee?.name ?? 'Unassigned'}</td>
                       <td>
                         <span className={`gb-badge ${isFinal(req) ? 'gb-badge-green' : isOvd ? 'gb-badge-red' : 'gb-badge-blue'}`}>
@@ -421,7 +421,7 @@ function IndividualDashboard({
                   const pct = Math.round((active / sla) * 100);
                   return (
                     <tr key={req.id} onClick={() => onOpen(req)} style={{ cursor: 'pointer' }}>
-                      <td style={{ fontWeight: 500, color: 'var(--accent)' }}>{req.title}</td>
+                      <td style={{ fontWeight: 500, color: 'var(--link)' }}>{req.title}</td>
                       <td><span className="gb-badge gb-badge-yellow">{req.current_stage}</span></td>
                       <td style={{ textAlign: 'right', fontWeight: 500, color: pct > 100 ? 'var(--error)' : 'var(--warning)' }}>{formatBusinessHours(active)}</td>
                       <td style={{ textAlign: 'right', color: 'var(--text-faint)' }}>{formatBusinessHours(sla)}</td>
@@ -617,7 +617,7 @@ function ManagerDashboard({
                     const assignee = findInDirectory(directory, req.assigned_to);
                     return (
                       <tr key={req.id} onClick={() => onOpen(req)} style={{ cursor: 'pointer' }}>
-                        <td style={{ color: 'var(--accent)', fontWeight: 500 }}>{req.title}</td>
+                        <td style={{ color: 'var(--link)', fontWeight: 500 }}>{req.title}</td>
                         <td style={{ color: 'var(--text-secondary)' }}>{assignee?.name ?? 'Unassigned'}</td>
                         <td style={{ textAlign: 'right' }}><span className="gb-badge gb-badge-red">{daysOver}d</span></td>
                       </tr>
@@ -648,7 +648,7 @@ function ManagerDashboard({
                     const assignee = findInDirectory(directory, req.assigned_to);
                     return (
                       <tr key={req.id} onClick={() => onOpen(req)} style={{ cursor: 'pointer' }}>
-                        <td style={{ color: 'var(--accent)', fontWeight: 500 }}>{req.title}</td>
+                        <td style={{ color: 'var(--link)', fontWeight: 500 }}>{req.title}</td>
                         <td style={{ color: 'var(--text-secondary)' }}>{assignee?.name ?? '—'}</td>
                         <td>{req.type.split(' ')[0]}</td>
                       </tr>

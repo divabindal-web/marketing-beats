@@ -17,6 +17,10 @@
     --text-muted: #6b7280;
     --text-faint: #9ca3af;
     --text-link: #8a6a00;
+    /* Row/table link text. The brand yellow is unreadable as text on white,
+       so clickable titles use this instead of --accent. */
+    --link: #14448c;
+    --link-hover: #0e3068;
 
     --border: #e6e8eb;
     --border-light: #eef0f2;
@@ -71,6 +75,8 @@
     --text-muted: #8a8f99;
     --text-faint: #5e6470;
     --text-link: #ffe24d;
+    --link: #7fb2f2;
+    --link-hover: #a6cbf7;
 
     --border: #23262e;
     --border-light: #1c1f26;
