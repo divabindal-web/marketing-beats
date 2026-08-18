@@ -16,6 +16,7 @@ import {
   Assignee, Cell, Domain, DOMAIN_LABEL, MonthStatus, MonthView, defaultMonth, dueLabel,
   fetchAssignees, fetchMonth, fetchMonthStatuses, monthLabel, saveCell, setMonthDue,
   setMonthOwner, setMonthState, shiftMonth, shortMonth, standingOf, statusOf, todayKey,
+  VIDEOS_METRIC, fetchVideosProduced,
 } from '@/lib/perf-monthly';
 import { useCurrentUser } from '@/components/layout/CurrentUserContext';
 import { currentDbUser } from '@/lib/work-api';
@@ -44,6 +45,11 @@ export default function MonthlyClosePage() {
   const today = useMemo(() => todayKey(), []);
 
   useEffect(() => { fetchAssignees().then(setAssignees).catch(() => {}); }, []);
+
+  // Videos finished in Design Ops this month, offered as a suggestion on the
+  // Social grid rather than written straight into the plan.
+  const [videoCounts, setVideoCounts] = useState<Record<string, number>>({});
+  useEffect(() => { fetchVideosProduced(month).then(setVideoCounts).catch(() => {}); }, [month]);
 
   useEffect(() => { currentDbUser().then((m) => setMe(m ? { id: m.id, role: m.role, is_lead: m.is_lead } : null)).catch(() => {}); }, []);
 
@@ -122,6 +128,15 @@ export default function MonthlyClosePage() {
       void load();
     }
   };
+
+  /** Only Social's "Videos produced" has a derivable answer today. */
+  const suggestFor = useCallback(
+    (entity: string, metric: string): number | null =>
+      domain === 'social' && metric === VIDEOS_METRIC && entity in videoCounts
+        ? videoCounts[entity]
+        : null,
+    [domain, videoCounts],
+  );
 
   const visibleRows = useMemo(() => {
     if (!view) return [];
@@ -335,7 +350,8 @@ export default function MonthlyClosePage() {
             <tbody>
               {grouped.map(([group, rows]) => (
                 <FragmentGroup key={group} group={group} rows={rows} metrics={view.metrics}
-                               prevLabel={shortMonth(view.prevMonth)} onSave={onCellSave} />
+                               prevLabel={shortMonth(view.prevMonth)} onSave={onCellSave}
+                               suggestFor={suggestFor} />
               ))}
             </tbody>
           </table>
@@ -351,13 +367,14 @@ export default function MonthlyClosePage() {
 }
 
 function FragmentGroup({
-  group, rows, metrics, prevLabel, onSave,
+  group, rows, metrics, prevLabel, onSave, suggestFor,
 }: {
   group: string;
   rows: { entity: string; label: string; link: string | null; kind: string | null; cells: Cell[] }[];
   metrics: string[];
   prevLabel: string;
   onSave: (entity: string, metric: string, raw: string) => void;
+  suggestFor: (entity: string, metric: string) => number | null;
 }) {
   return (
     <>
@@ -386,6 +403,7 @@ function FragmentGroup({
             const c = r.cells.find((x) => x.metric === m);
             if (!c) return <td key={m} />;
             return <CellInput key={m} cell={c} prevLabel={prevLabel}
+                              suggestion={suggestFor(r.entity, m)}
                               onSave={(raw) => onSave(r.entity, m, raw)} />;
           })}
         </tr>
@@ -394,7 +412,9 @@ function FragmentGroup({
   );
 }
 
-function CellInput({ cell, prevLabel, onSave }: { cell: Cell; prevLabel: string; onSave: (raw: string) => void }) {
+function CellInput({ cell, prevLabel, suggestion, onSave }: {
+  cell: Cell; prevLabel: string; suggestion: number | null; onSave: (raw: string) => void;
+}) {
   const [draft, setDraft] = useState(cell.value == null ? '' : String(cell.value));
   useEffect(() => { setDraft(cell.value == null ? '' : String(cell.value)); }, [cell.value]);
 

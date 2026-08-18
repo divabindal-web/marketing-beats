@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { X, CheckCircle, Circle, ChevronRight, ExternalLink, Link2, Trash2 } from 'lucide-react';
-import { Request, StageTransition, getTATCategoriesForType } from '@/types';
+import { ENTITIES, Request, StageTransition, getTATCategoriesForType } from '@/types';
 import { getStagesForType, isOverdue } from '@/lib/sample-data';
 import { DirectoryUser } from '@/lib/directory';
 import { getStageBreakdown, formatBusinessHours } from '@/lib/tat';
@@ -578,6 +578,32 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
               </p>
             )}
             <div className="space-y-2.5">
+              {/* Entity was previously set once at creation and never editable,
+                  so the rows created before it was persisted had no way back.
+                  It also decides which brand a finished video counts towards,
+                  so a blank one is worth flagging rather than hiding. */}
+              <div>
+                <label className="text-[11px] font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+                  Entity
+                </label>
+                <select
+                  value={request.entity || ''}
+                  onChange={(e) => handleFieldChange('entity', e.target.value)}
+                  className="w-full input-base text-sm"
+                  style={!request.entity ? { borderColor: 'var(--warning)' } : undefined}
+                >
+                  <option value="">-- Not set --</option>
+                  {ENTITIES.map((en) => (
+                    <option key={en} value={en}>{en}</option>
+                  ))}
+                </select>
+                {!request.entity && (
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--warning)' }}>
+                    Set this so the work counts towards the right brand.
+                  </p>
+                )}
+              </div>
+
               <div>
                 <label className="text-[11px] font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
                   Assigned To (Design)

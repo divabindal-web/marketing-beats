@@ -355,3 +355,27 @@ export async function setMonthState(
   );
   if (error) throw new Error(error.message);
 }
+
+/* ---------------- computed suggestions ---------------- */
+
+/**
+ * "Videos produced" is the one Social row Design Ops already knows the answer
+ * to: a video request that reached 'Uploaded' in the month IS a video produced
+ * that month. v_videos_produced does the counting.
+ *
+ * Returned as a suggestion rather than written automatically — the plan is a
+ * reported number that someone signs off on, and silently overwriting a typed
+ * value with a derived one would be the wrong kind of helpful.
+ */
+export const VIDEOS_METRIC = 'Videos produced';
+
+export async function fetchVideosProduced(month: string): Promise<Record<string, number>> {
+  const { data, error } = await supabase
+    .from('v_videos_produced')
+    .select('entity, videos')
+    .eq('month', month);
+  if (error) return {}; // a missing view should not take the whole page down
+  const out: Record<string, number> = {};
+  for (const r of (data ?? []) as { entity: string; videos: number }[]) out[r.entity] = r.videos;
+  return out;
+}
