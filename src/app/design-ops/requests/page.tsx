@@ -57,6 +57,20 @@ function AllRequestsPageInner() {
     setIsPanelOpen(true);
   };
 
+  // ?open=<id> opens that request's panel directly, so a notification can land
+  // on the thing it is about rather than on the list. Runs once the requests
+  // have loaded, and only while the panel is closed, so it does not fight a
+  // panel the person opened themselves.
+  const openId = searchParams.get('open');
+  useEffect(() => {
+    if (!openId || isPanelOpen || requests.length === 0) return;
+    const match = requests.find((r) => r.id === openId);
+    if (match) {
+      setSelectedRequest(match);
+      setIsPanelOpen(true);
+    }
+  }, [openId, requests, isPanelOpen]);
+
   const handleUpdateRequest = (updated: Request) => {
     setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
     setSelectedRequest(updated);

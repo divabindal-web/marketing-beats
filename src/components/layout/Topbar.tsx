@@ -31,6 +31,18 @@ const breadcrumbMap: Record<string, { section: string; sectionHref: string; labe
   '/admin/reset-passwords': { section: 'Admin', sectionHref: '/user-management', label: 'Reset Passwords' },
 };
 
+/**
+ * Where a notification takes you. They were previously plain text, so being
+ * told "you have been assigned X" gave you no way to reach X.
+ * `request_id` covers everything Design Ops raises; the close has no request
+ * behind it, so it routes by type instead.
+ */
+function notificationHref(n: NotificationRow): string {
+  if (n.request_id) return `/design-ops/requests?open=${n.request_id}`;
+  if (n.type === 'close_assigned') return '/performance-data/monthly';
+  return '/overview';
+}
+
 export default function Topbar({ title, onNewRequest, onOpenNav }: TopbarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const { theme, setTheme } = useTheme();
@@ -158,12 +170,18 @@ export default function Topbar({ title, onNewRequest, onOpenNav }: TopbarProps) 
               ) : (
                 <div className="max-h-96 overflow-y-auto">
                   {notes.map((n) => (
-                    <div key={n.id} className="px-3 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
+                    <Link
+                      key={n.id}
+                      href={notificationHref(n)}
+                      onClick={() => setShowBell(false)}
+                      className="block px-3 py-2.5 transition-colors hover:brightness-[0.98]"
+                      style={{ borderBottom: '1px solid var(--border)', backgroundColor: n.read ? undefined : 'var(--bg-tertiary)' }}
+                    >
                       <div className="text-[12.5px]" style={{ color: 'var(--text-primary)' }}>{n.message}</div>
                       <div className="text-[10.5px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
                         {new Date(n.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}
