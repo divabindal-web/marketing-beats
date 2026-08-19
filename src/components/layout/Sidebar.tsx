@@ -137,6 +137,13 @@ const navSections: NavSection[] = [
         href: '/user-management',
         icon: <Users size={16} strokeWidth={1.75} />,
       },
+      {
+        // The page existed and worked, but nothing linked to it, so the one
+        // place you could set a member's password by hand was unreachable.
+        label: 'Reset Passwords',
+        href: '/admin/reset-passwords',
+        icon: <Key size={16} strokeWidth={1.75} />,
+      },
     ],
   },
 ];

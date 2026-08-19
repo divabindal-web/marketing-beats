@@ -260,6 +260,12 @@ export default function UserManagementPage() {
   // A freshly issued password, shown inline against the row it belongs to.
   const [issued, setIssued] = useState<{ id: string; password: string } | null>(null);
   const [resetting, setResetting] = useState<string | null>(null);
+  // Bulk "everyone who cannot get in gets this password". Typed here and sent
+  // straight to the edge function — it is never stored or logged anywhere.
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkPwd, setBulkPwd] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   // A lead (non-admin) adds members into their own team
@@ -294,6 +300,42 @@ export default function UserManagementPage() {
     } finally {
       setResetting(null);
     }
+  };
+
+  /**
+   * Give every locked-out member the same password.
+   *
+   * The one-at-a-time reset is fine for one person, but the pilot has dozens
+   * who never received their original password, and reading out a different
+   * generated string for each is not realistic. Runs sequentially so a lead
+   * hitting other teams' members gets a clean per-person refusal from the
+   * edge function rather than a burst of parallel 403s.
+   */
+  const applyBulkPassword = async () => {
+    const targets = users.filter(
+      (u) => u.email && signedIn && !signedIn.has(u.email.toLowerCase()),
+    );
+    if (targets.length === 0 || bulkPwd.trim().length < 8) return;
+    setBulkBusy(true);
+    setBulkResult(null);
+    let ok = 0;
+    const failed: string[] = [];
+    for (const u of targets) {
+      try {
+        await resetMemberPassword(u.email!, bulkPwd.trim());
+        ok += 1;
+      } catch {
+        failed.push(u.name);
+      }
+    }
+    setBulkBusy(false);
+    setBulkPwd('');
+    setBulkResult(
+      failed.length === 0
+        ? `Set for all ${ok} of them.`
+        : `Set for ${ok}. Could not set ${failed.length}: ${failed.slice(0, 4).join(', ')}${failed.length > 4 ? '…' : ''}`,
+    );
+    void load();
   };
 
   const load = useCallback(async () => {
@@ -400,6 +442,72 @@ export default function UserManagementPage() {
             {filtered.length} member{filtered.length === 1 ? '' : 's'}
           </div>
         </div>
+
+      {/* Everyone who cannot get in, and a way to fix it in one go. The
+          password is typed here and posted straight to the edge function —
+          it is not stored, logged, or sent anywhere else. */}
+      {(() => {
+        const locked = users.filter(
+          (u) => u.email && signedIn && !signedIn.has(u.email.toLowerCase()),
+        );
+        if (locked.length === 0) return null;
+        return (
+          <div className="gb-card p-4 mb-4" style={{ borderColor: 'var(--warning)' }}>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <div className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  {locked.length} member{locked.length === 1 ? ' has' : 's have'} never signed in
+                </div>
+                <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                  Their one-time password was shown once and cannot be read back, so it is
+                  likely nobody has it. Give them all the same starting password and tell them
+                  to change it from the sidebar menu.
+                </p>
+              </div>
+              {!bulkOpen && (
+                <button className="gb-btn gb-btn-secondary" onClick={() => { setBulkOpen(true); setBulkResult(null); }}>
+                  <KeyRound size={14} /> Set one password for all
+                </button>
+              )}
+            </div>
+
+            {bulkOpen && (
+              <div className="flex items-center gap-2 mt-3 flex-wrap">
+                <input
+                  type="text"
+                  className="gb-input"
+                  style={{ minWidth: 260, fontFamily: 'monospace' }}
+                  placeholder="Starting password (min 8 characters)"
+                  value={bulkPwd}
+                  onChange={(e) => setBulkPwd(e.target.value)}
+                  disabled={bulkBusy}
+                />
+                <button
+                  className="gb-btn gb-btn-primary"
+                  disabled={bulkBusy || bulkPwd.trim().length < 8}
+                  onClick={() => void applyBulkPassword()}
+                >
+                  {bulkBusy ? `Setting for ${locked.length}…` : `Apply to ${locked.length}`}
+                </button>
+                <button className="gb-btn gb-btn-secondary" disabled={bulkBusy}
+                        onClick={() => { setBulkOpen(false); setBulkPwd(''); }}>
+                  Cancel
+                </button>
+                {bulkPwd.length > 0 && bulkPwd.trim().length < 8 && (
+                  <span className="text-[12px]" style={{ color: 'var(--error)' }}>
+                    Must be at least 8 characters.
+                  </span>
+                )}
+              </div>
+            )}
+
+            {bulkResult && (
+              <p className="text-[12.5px] mt-2" style={{ color: 'var(--success)' }}>{bulkResult}</p>
+            )}
+          </div>
+        );
+      })()}
+
       </div>
 
       {loadError && (
