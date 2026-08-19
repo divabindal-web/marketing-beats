@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DbUserRow, TEAMS, addDbUser, currentDbUser, deleteDbUser, listDbUsers, updateDbUser } from '@/lib/work-api';
-import { Search, Trash2, UserPlus, X } from 'lucide-react';
+import { DbUserRow, TEAMS, addDbUser, currentDbUser, deleteDbUser, listDbUsers, updateDbUser,
+  signedInEmails, resetMemberPassword } from '@/lib/work-api';
+import { KeyRound, Search, Trash2, UserPlus, X } from 'lucide-react';
 
 type EditablePatch = Partial<Pick<DbUserRow, 'role' | 'team' | 'is_lead' | 'is_active' | 'designation'>>;
 
@@ -253,6 +254,12 @@ export default function UserManagementPage() {
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
+  // Emails that have signed in at least once. null = we could not tell, in
+  // which case no badge is shown rather than guessing everyone is locked out.
+  const [signedIn, setSignedIn] = useState<Set<string> | null>(null);
+  // A freshly issued password, shown inline against the row it belongs to.
+  const [issued, setIssued] = useState<{ id: string; password: string } | null>(null);
+  const [resetting, setResetting] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   // A lead (non-admin) adds members into their own team
@@ -266,11 +273,35 @@ export default function UserManagementPage() {
       .catch(() => {});
   }, []);
 
+  /**
+   * Issue a fresh one-time password. This is the way back for anyone whose
+   * original password was lost — previously there was none: the reset lived on
+   * an admin page nothing linked to, so a locked-out member stayed locked out.
+   */
+  const resetPassword = async (user: DbUserRow) => {
+    if (!user.email) return;
+    setResetting(user.id);
+    setIssued(null);
+    setRowErrors((cur) => { const n = { ...cur }; delete n[user.id]; return n; });
+    try {
+      const res = await resetMemberPassword(user.email);
+      setIssued({ id: user.id, password: res.password });
+    } catch (e) {
+      setRowErrors((cur) => ({
+        ...cur,
+        [user.id]: e instanceof Error ? e.message : 'Could not reset the password',
+      }));
+    } finally {
+      setResetting(null);
+    }
+  };
+
   const load = useCallback(async () => {
     try {
       setLoadError(null);
-      const rows = await listDbUsers();
+      const [rows, seen] = await Promise.all([listDbUsers(), signedInEmails()]);
       setUsers(rows);
+      setSignedIn(seen);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : 'Failed to load members');
     } finally {
@@ -438,7 +469,18 @@ export default function UserManagementPage() {
                         <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>
                           {user.name}{' '}
                           {user.role === 'admin' && <span className="gb-badge gb-badge-red">admin</span>}
+                          {user.email && signedIn && !signedIn.has(user.email.toLowerCase()) && (
+                            <span className="gb-badge gb-badge-yellow" title="This member has an account but has never completed a sign-in">
+                              never signed in
+                            </span>
+                          )}
                         </div>
+                        {issued?.id === user.id && (
+                          <div style={{ fontSize: '11.5px', marginTop: '3px', color: 'var(--success)' }}>
+                            New password: <strong style={{ fontFamily: 'monospace' }}>{issued.password}</strong>
+                            {' '}— shown once, send it to them now.
+                          </div>
+                        )}
                         {rowErrors[user.id] && (
                           <div style={{ fontSize: '11.5px', color: 'var(--error)', marginTop: '2px' }}>
                             {rowErrors[user.id]}
@@ -519,13 +561,25 @@ export default function UserManagementPage() {
                         </button>
                       </div>
                     ) : (
-                      <button
-                        className="gb-icon-btn"
-                        title={`Remove ${user.name}`}
-                        onClick={() => setPendingDelete(user.id)}
-                      >
-                        <Trash2 size={14} strokeWidth={1.75} style={{ color: 'var(--error)' }} />
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          className="gb-btn gb-btn-secondary"
+                          style={{ padding: '4px 10px', fontSize: '12px' }}
+                          disabled={!user.email || resetting === user.id}
+                          title={`Issue a new one-time password for ${user.name}`}
+                          onClick={() => void resetPassword(user)}
+                        >
+                          <KeyRound size={12} strokeWidth={1.75} />
+                          {resetting === user.id ? 'Resetting…' : 'Reset password'}
+                        </button>
+                        <button
+                          className="gb-icon-btn"
+                          title={`Remove ${user.name}`}
+                          onClick={() => setPendingDelete(user.id)}
+                        >
+                          <Trash2 size={14} strokeWidth={1.75} style={{ color: 'var(--error)' }} />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>

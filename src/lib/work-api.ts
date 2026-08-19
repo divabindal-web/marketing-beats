@@ -250,3 +250,28 @@ export async function resetMemberPassword(email: string, password?: string): Pro
   if (data?.error) throw new Error(data.error as string);
   return { email: data.email as string, password: data.password as string };
 }
+
+/* -------- who can actually get in -------- */
+
+/**
+ * Emails that have completed at least one sign-in.
+ *
+ * Returned as the *positive* set on purpose. A member's one-time password is
+ * shown once when they are added and cannot be read back, so if it is lost or
+ * never passed on they are locked out — and User Management gave no hint,
+ * since they looked identical to everyone else. Callers flag anyone absent
+ * from this set, which catches both "never signed in" and the rarer "has no
+ * sign-in account at all" (that person is missing from the view entirely, so
+ * asking for the negative set would quietly skip them).
+ */
+export async function signedInEmails(): Promise<Set<string> | null> {
+  const { data, error } = await supabase
+    .from('v_member_login_status')
+    .select('email, has_signed_in');
+  if (error) return null;   // unknown — callers should show no badge at all
+  return new Set(
+    (data as { email: string; has_signed_in: boolean }[])
+      .filter((r) => r.has_signed_in)
+      .map((r) => r.email.toLowerCase()),
+  );
+}
