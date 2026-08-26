@@ -33,7 +33,6 @@ import {
   getStageBreakdown,
   calculateActiveTAT,
   formatBusinessHours,
-  SLA_HOURS,
 } from '@/lib/tat';
 import RequestModal from '@/components/design-ops/RequestModal';
 import DetailPanel from '@/components/design-ops/DetailPanel';
@@ -240,7 +239,7 @@ function IndividualDashboard({
     [requests, currentUserIds],
   );
 
-  // Work you raised for someone else. Kept out of the SLA/TAT figures above —
+  // Work you raised for someone else. Kept out of the TAT figures above —
   // those are about your own queue — but a lead who assigns work all day had no
   // way to see it here at all, so it looked like their requests had vanished.
   const raisedByMe = useMemo(
@@ -258,22 +257,14 @@ function IndividualDashboard({
   const pending = myRequests.filter((r) => !isFinal(r));
   const completed = myRequests.filter((r) => isFinal(r));
   const overdue = pending.filter((r) => isOverdue(r));
-  const breachingSLA = pending.filter((r) => {
-    const active = calculateActiveTAT(r.transitions ?? []);
-    const sla = SLA_HOURS[r.type];
-    return active > sla * 0.8;
-  });
-
-  // Priority queue: overdue first, then closest-to-SLA first
+  // Overdue first, then whatever has been in hand longest. Ranking by a
+  // fraction of a fixed limit said more about the type than about the work.
   const priorityQueue = useMemo(() => {
     return [...pending].sort((a, b) => {
       const aOverdue = isOverdue(a) ? 0 : 1;
       const bOverdue = isOverdue(b) ? 0 : 1;
       if (aOverdue !== bOverdue) return aOverdue - bOverdue;
-      // Sort by how much of SLA is consumed (descending)
-      const aRatio = calculateActiveTAT(a.transitions ?? []) / SLA_HOURS[a.type];
-      const bRatio = calculateActiveTAT(b.transitions ?? []) / SLA_HOURS[b.type];
-      return bRatio - aRatio;
+      return calculateActiveTAT(b.transitions ?? []) - calculateActiveTAT(a.transitions ?? []);
     });
   }, [pending]);
 
@@ -296,7 +287,7 @@ function IndividualDashboard({
         <StatCard label="My pending" value={pending.length} icon={Clock} tone="brand" />
         <StatCard label="Completed" value={completed.length} icon={CheckCircle2} tone="success" />
         <StatCard label="Overdue" value={overdue.length} icon={AlertCircle} tone={overdue.length > 0 ? 'error' : 'neutral'} />
-        <StatCard label="Near SLA" value={breachingSLA.length} icon={AlertTriangle} tone={breachingSLA.length > 0 ? 'warning' : 'neutral'} />
+
         <StatCard label="Raised by you" value={raisedOpen.length} icon={ArrowRight} tone="neutral" caption={raisedByMe.length ? `${raisedByMe.length} total` : undefined} />
       </div>
 
@@ -322,15 +313,12 @@ function IndividualDashboard({
                   <th>Stage</th>
                   <th>Need By</th>
                   <th style={{ textAlign: 'right' }}>TAT Used</th>
-                  <th style={{ textAlign: 'right' }}>SLA %</th>
+                  <th style={{ textAlign: 'right' }}>Working hrs</th>
                 </tr>
               </thead>
               <tbody>
                 {priorityQueue.slice(0, 10).map((req) => {
                   const active = calculateActiveTAT(req.transitions ?? []);
-                  const sla = SLA_HOURS[req.type];
-                  const ratio = active / sla;
-                  const pct = Math.round(ratio * 100);
                   const isOvd = isOverdue(req);
                   return (
                     <tr key={req.id} onClick={() => onOpen(req)} style={{ cursor: 'pointer', backgroundColor: isOvd ? 'var(--error-bg)' : 'transparent' }}>
@@ -341,8 +329,9 @@ function IndividualDashboard({
                         {formatDate(req.need_by)}
                         {isOvd && <span className="ml-1 text-[10px] font-bold" style={{ color: 'var(--error)' }}>OVERDUE</span>}
                       </td>
-                      <td style={{ textAlign: 'right' }}><span style={{ color: ratio > 1 ? 'var(--error)' : ratio > 0.8 ? 'var(--warning)' : 'var(--success)', fontWeight: 500 }}>{formatBusinessHours(active)}</span></td>
-                      <td style={{ textAlign: 'right' }}><SLABar pct={pct} /></td>
+                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                        {formatBusinessHours(active)}
+                      </td>
                     </tr>
                   );
                 })}
@@ -396,44 +385,6 @@ function IndividualDashboard({
         </section>
       )}
 
-      {/* TAT breaches */}
-      {breachingSLA.length > 0 && (
-        <section>
-          <h2 className="gb-section-title flex items-center gap-1.5">
-            <AlertTriangle size={14} style={{ color: 'var(--warning)' }} />
-            Approaching / Exceeding SLA
-          </h2>
-          <div className="gb-card overflow-hidden">
-            <table className="gb-table">
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th>Stage</th>
-                  <th style={{ textAlign: 'right' }}>TAT</th>
-                  <th style={{ textAlign: 'right' }}>SLA limit</th>
-                  <th style={{ textAlign: 'right' }}>%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {breachingSLA.map((req) => {
-                  const active = calculateActiveTAT(req.transitions ?? []);
-                  const sla = SLA_HOURS[req.type];
-                  const pct = Math.round((active / sla) * 100);
-                  return (
-                    <tr key={req.id} onClick={() => onOpen(req)} style={{ cursor: 'pointer' }}>
-                      <td style={{ fontWeight: 500, color: 'var(--link)' }}>{req.title}</td>
-                      <td><span className="gb-badge gb-badge-yellow">{req.current_stage}</span></td>
-                      <td style={{ textAlign: 'right', fontWeight: 500, color: pct > 100 ? 'var(--error)' : 'var(--warning)' }}>{formatBusinessHours(active)}</td>
-                      <td style={{ textAlign: 'right', color: 'var(--text-faint)' }}>{formatBusinessHours(sla)}</td>
-                      <td style={{ textAlign: 'right' }}><SLABar pct={pct} /></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
     </>
   );
 }
@@ -478,10 +429,6 @@ function ManagerDashboard({
               .filter((t): t is number => t !== null)
               .reduce((sum, t, _, arr) => sum + t / arr.length, 0)
           : 0;
-      const breaching = pending.filter((r) => {
-        const active = calculateActiveTAT(r.transitions ?? []);
-        return active > SLA_HOURS[r.type];
-      }).length;
       return {
         uid,
         name: user?.name ?? uid,
@@ -490,17 +437,16 @@ function ManagerDashboard({
         completed: completed.length,
         overdue: overdueCount,
         avgTat,
-        breaching,
       };
     }).filter((m) => m.total > 0)
-      .sort((a, b) => b.overdue - a.overdue || b.breaching - a.breaching);
+      .sort((a, b) => b.overdue - a.overdue || b.avgTat - a.avgTat);
   }, [requests, directory]);
 
   const overdueList = requests.filter((r) => isOverdue(r)).sort((a, b) => new Date(a.need_by).getTime() - new Date(b.need_by).getTime()).slice(0, 8);
   const changeRequestsList = requests.filter((r) => r.current_stage === 'Change Req').slice(0, 5);
 
-  // Who to watch (overdue or SLA breach)
-  const watchList = memberPerf.filter((m) => m.overdue > 0 || m.breaching > 0);
+  // Who to watch: anyone carrying overdue work.
+  const watchList = memberPerf.filter((m) => m.overdue > 0);
 
   return (
     <>
@@ -522,7 +468,7 @@ function ManagerDashboard({
             Needs attention
           </h2>
           <p className="text-[12px] mb-3" style={{ color: 'var(--text-faint)' }}>
-            Team members with overdue requests or SLA breaches. Consider reassigning their workload.
+            Team members carrying overdue requests. Consider reassigning their workload.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {watchList.map((m) => (
@@ -539,7 +485,6 @@ function ManagerDashboard({
                 </div>
                 <div className="flex items-center gap-2">
                   {m.overdue > 0 && <span className="gb-badge gb-badge-red">{m.overdue} overdue</span>}
-                  {m.breaching > 0 && <span className="gb-badge gb-badge-yellow">{m.breaching} SLA breach</span>}
                 </div>
                 {m.avgTat > 0 && (
                   <div className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
@@ -563,7 +508,6 @@ function ManagerDashboard({
                 <th style={{ textAlign: 'right' }}>Pending</th>
                 <th style={{ textAlign: 'right' }}>Completed</th>
                 <th style={{ textAlign: 'right' }}>Overdue</th>
-                <th style={{ textAlign: 'right' }}>SLA Breaches</th>
                 <th style={{ textAlign: 'right' }}>Avg TAT</th>
               </tr>
             </thead>
@@ -583,9 +527,6 @@ function ManagerDashboard({
                   <td style={{ textAlign: 'right' }}>{m.completed}</td>
                   <td style={{ textAlign: 'right' }}>
                     {m.overdue > 0 ? <span className="gb-badge gb-badge-red">{m.overdue}</span> : <span style={{ color: 'var(--text-faint)' }}>0</span>}
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    {m.breaching > 0 ? <span className="gb-badge gb-badge-yellow">{m.breaching}</span> : <span style={{ color: 'var(--text-faint)' }}>0</span>}
                   </td>
                   <td style={{ textAlign: 'right', fontWeight: 500 }}>
                     {m.avgTat > 0 ? formatBusinessHours(m.avgTat) : '—'}
@@ -721,14 +662,4 @@ function EmptyState({ icon: Icon, text }: { icon: any; text: string }) {
   );
 }
 
-function SLABar({ pct }: { pct: number }) {
-  const color = pct > 100 ? 'var(--error)' : pct > 80 ? 'var(--warning)' : 'var(--success)';
-  return (
-    <div className="inline-flex items-center gap-2 justify-end">
-      <div className="w-16 h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
-        <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${Math.min(100, pct)}%`, background: `linear-gradient(90deg, ${color}, ${color})`, boxShadow: pct > 100 ? '0 0 6px var(--error)' : undefined }} />
-      </div>
-      <span className="text-[11px] font-semibold tabular-nums" style={{ color, minWidth: 30, textAlign: 'right' }}>{pct}%</span>
-    </div>
-  );
-}
+

@@ -19,7 +19,6 @@ import {
   getDeliveryTAT,
   calculateActiveTAT,
   formatBusinessHours,
-  SLA_HOURS,
 } from '@/lib/tat';
 import DetailPanel from '@/components/design-ops/DetailPanel';
 
@@ -355,10 +354,11 @@ function AllRequestsPageInner() {
                     {(() => {
                       const delivered = getDeliveryTAT(req.transitions ?? [], req.type);
                       const active = delivered ?? calculateActiveTAT(req.transitions ?? []);
-                      const sla = SLA_HOURS[req.type];
-                      const ratio = active / sla;
-                      const color = ratio <= 0.8 ? 'var(--success)' : ratio <= 1.0 ? 'var(--warning)' : 'var(--error)';
-                      return <span style={{ color, fontWeight: 500 }}>{formatBusinessHours(active)}</span>;
+                      return (
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                          {formatBusinessHours(active)}
+                        </span>
+                      );
                     })()}
                   </td>
                   {canManageReq && (
@@ -437,24 +437,6 @@ function AllRequestsPageInner() {
                       className="gb-card gb-card-hover relative overflow-hidden"
                       style={{ cursor: 'grab' }} onClick={() => handleOpenRequest(req)}>
                       <span className="absolute left-0 top-0 h-full w-[3px]" style={{ backgroundColor: isOverdueReq ? 'var(--error)' : typeColors[req.type].dot }} />
-                      {/* SLA spent, as a hairline along the bottom edge. The
-                          list and My Tasks already show this; the board — the
-                          view a team actually works from — signalled only the
-                          due date, so a request quietly burning its turnaround
-                          looked identical to one just raised. */}
-                      {(() => {
-                        const sla = SLA_HOURS[req.type];
-                        if (!sla || ['Done', 'Uploaded'].includes(req.current_stage)) return null;
-                        const used = calculateActiveTAT(req.transitions ?? []);
-                        const ratio = used / sla;
-                        const pct = Math.min(100, Math.round(ratio * 100));
-                        const tone = ratio >= 1 ? 'var(--error)'
-                          : ratio >= 0.75 ? 'var(--warning)' : 'var(--success)';
-                        return (
-                          <span className="absolute left-0 bottom-0 h-[2px]" title={`${formatBusinessHours(used)} of ${sla}h SLA used`}
-                                style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: tone, opacity: 0.85 }} />
-                        );
-                      })()}
                       <div style={{ padding: '10px 12px 11px 14px' }}>
                         <div className="flex items-center justify-between gap-1.5 mb-1.5">
                           <span className={`gb-badge ${typeColors[req.type].badge}`}>{req.type === 'Social Media Graphics' ? 'SMG' : req.type}</span>
@@ -527,22 +509,18 @@ function AllRequestsPageInner() {
                     deadlines said nothing about which of them were in trouble. */}
                 {dayReqs.slice(0, 2).map(req => {
                   const done = ['Done', 'Uploaded'].includes(req.current_stage);
-                  const sla = SLA_HOURS[req.type];
-                  const ratio = done || !sla ? 0 : calculateActiveTAT(req.transitions ?? []) / sla;
                   const late = !done && req.need_by != null && getDaysUntilDue(req.need_by) < 0;
                   const bg = done ? 'var(--success-bg)'
-                    : late || ratio >= 1 ? 'var(--error-bg)'
-                    : ratio >= 0.75 ? 'var(--warning-bg)'
+                    : late ? 'var(--error-bg)'
                     : 'var(--accent-light)';
                   const fg = done ? 'var(--success)'
-                    : late || ratio >= 1 ? 'var(--error)'
-                    : ratio >= 0.75 ? 'var(--warning)'
+                    : late ? 'var(--error)'
                     : 'var(--accent-text)';
                   return (
                     <div key={req.id} onClick={() => handleOpenRequest(req)}
                       className="text-[10px] px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer"
                       style={{ backgroundColor: bg, color: fg }}
-                      title={`${req.title}${sla && !done ? ` — ${formatBusinessHours(calculateActiveTAT(req.transitions ?? []))} of ${sla}h SLA` : ''}`}>
+                      title={`${req.title}${done ? '' : ` — ${formatBusinessHours(calculateActiveTAT(req.transitions ?? []))} of working time so far`}`}>
                       {req.title}
                     </div>
                   );

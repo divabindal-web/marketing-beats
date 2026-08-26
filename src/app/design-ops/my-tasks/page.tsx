@@ -4,8 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, AlertTriangle, CheckCircle2, ChevronRight, Inbox } from 'lucide-react';
 import { Request } from '@/types';
 import { fetchRequests, updateRequest } from '@/lib/requests-api';
-import { SLA_HOURS, calculateActiveTAT } from '@/lib/tat';
-import { RequestType } from '@/types';
+import { calculateActiveTAT } from '@/lib/tat';
 import { formatDate, getDaysUntilDue } from '@/lib/sample-data';
 import { useDirectory } from '@/lib/directory';
 import { useRequestsRealtime } from '@/lib/use-requests-realtime';
@@ -64,25 +63,22 @@ export default function MyTasksPage() {
   const today = new Date().toISOString().slice(0, 10);
 
   /**
-   * How much of this request's SLA has been spent, in active business hours.
-   * The dashboard already ranks work this way for whoever is watching the
-   * team; the person actually doing it saw an unordered list.
+   * Active working hours this request has already taken — nights, weekends and
+   * time parked waiting on a shoot, content or review feedback excluded.
    */
-  const slaUseOf = useCallback((r: Request) => {
-    const sla = SLA_HOURS[r.type as RequestType];
-    if (!sla) return null;
-    const used = calculateActiveTAT(r.transitions ?? []);
-    return { used, sla, ratio: used / sla };
-  }, []);
+  const workingHoursOf = useCallback(
+    (r: Request) => calculateActiveTAT(r.transitions ?? []),
+    [],
+  );
 
-  // Most SLA spent first, so the top of the list is what to pick up next.
-  // need_by breaks ties, since two untouched requests both sit at zero.
+  // Longest-running first, so the top of the list is what has been sitting
+  // with you the longest. need_by breaks ties between two untouched requests.
   const byUrgency = useCallback((a: Request, b: Request) => {
-    const ra = slaUseOf(a)?.ratio ?? 0;
-    const rb = slaUseOf(b)?.ratio ?? 0;
-    if (rb !== ra) return rb - ra;
+    const ha = workingHoursOf(a);
+    const hb = workingHoursOf(b);
+    if (hb !== ha) return hb - ha;
     return (a.need_by ?? '9999-12-31').localeCompare(b.need_by ?? '9999-12-31');
-  }, [slaUseOf]);
+  }, [workingHoursOf]);
 
   const buckets = useMemo(() => ({
     upcoming: mine
@@ -183,9 +179,9 @@ export default function MyTasksPage() {
 
       {!loading && list.length > 0 && tab === 'upcoming' && (
         <p className="text-[11.5px] mb-2" style={{ color: 'var(--text-faint)' }}>
-          Ordered by how much of each request&apos;s turnaround target has been used, so the
-          most pressing is first. Counts working hours only, and pauses while a request waits
-          on content, a shoot or review feedback.
+          Longest-running first, by working hours actually spent. The clock pauses while a
+          request waits on content, a shoot or review feedback, so time you are not
+          responsible for does not count against you.
         </p>
       )}
 
@@ -213,24 +209,18 @@ export default function MyTasksPage() {
                   </div>
                 </div>
                 <span className={`gb-badge ${stagePill(r.current_stage, late)} flex-shrink-0`}>{r.current_stage}</span>
-                {/* SLA spent, in active business hours. Shown as a bar because
-                    the useful question is "how much room is left", not the
-                    raw number. Hidden once the work is done. */}
+                {/* Working hours this has already taken. A plain number, not
+                    a bar against a target — the target was noise. */}
                 {(() => {
-                  const u = tab === 'completed' ? null : slaUseOf(r);
-                  if (!u) return <div className="flex-shrink-0" style={{ width: 78 }} />;
-                  const pct = Math.min(100, Math.round(u.ratio * 100));
-                  const tone = u.ratio >= 1 ? 'var(--error)'
-                    : u.ratio >= 0.75 ? 'var(--warning)' : 'var(--success)';
+                  if (tab === 'completed') return <div className="flex-shrink-0" style={{ width: 70 }} />;
+                  const hrs = workingHoursOf(r);
                   return (
-                    <div className="flex-shrink-0" style={{ width: 78 }}
-                         title={`${u.used.toFixed(1)} of ${u.sla} business hours used`}>
-                      <div className="text-[10px] font-semibold tabular-nums text-right" style={{ color: tone }}>
-                        {u.ratio >= 1 ? 'SLA passed' : `${pct}% of SLA`}
+                    <div className="flex-shrink-0 text-right" style={{ width: 70 }}
+                         title="Working hours spent on this so far, pauses excluded">
+                      <div className="text-[12px] font-medium tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                        {hrs < 1 ? '<1h' : `${hrs.toFixed(1)}h`}
                       </div>
-                      <div className="h-1 w-full rounded-full mt-1 overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
-                        <div className="h-full rounded-full" style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: tone }} />
-                      </div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-faint)' }}>working</div>
                     </div>
                   );
                 })()}
