@@ -69,8 +69,37 @@ export interface Request {
   updated_at: string;
   /** Append-only log of stage transitions. Primary source of truth for TAT. */
   transitions: StageTransition[];
+  /** Per-stakeholder legs, in workflow order. Source of per-person TAT. */
+  legs?: RequestLeg[];
   /** @deprecated Kept only for backwards-compat with older pages. Use `transitions`. */
   stage_timestamps?: Record<string, string>;
+}
+
+/**
+ * One stakeholder's part of a request (a row in `request_assignments`).
+ * A request is split into ordered legs — content, design, shoot, edit,
+ * upload — each owned by one person. Marking a leg done stops that
+ * person's clock; the rest of the request's elapsed time is not theirs.
+ */
+export type LegStatus = 'pending' | 'active' | 'done' | 'skipped';
+
+export interface RequestLeg {
+  id: string;
+  request_id: string;
+  /** Workflow order within the request (1-based). */
+  seq: number;
+  role_key: string;
+  label: string;
+  /** Owner of this part. Undefined = no one named yet (leg is skipped). */
+  user_id?: string;
+  status: LegStatus;
+  /** When the request was raised / this person was named. */
+  assigned_at: string;
+  /** When the work actually reached this person (previous leg finished). */
+  started_at?: string;
+  /** When this person marked their part done. */
+  completed_at?: string;
+  note?: string;
 }
 
 /**

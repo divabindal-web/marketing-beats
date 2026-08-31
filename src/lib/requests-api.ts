@@ -13,7 +13,7 @@
 import { supabase } from '@/lib/supabase';
 import { SAMPLE_USERS } from '@/lib/sample-data';
 import { currentDbUser } from '@/lib/work-api';
-import { Request, RequestStage, StageTransition } from '@/types';
+import { Request, RequestLeg, RequestStage, StageTransition } from '@/types';
 
 /* ---------------- user id bridge (sample id ⇄ db uuid, via email) -------- */
 
@@ -72,11 +72,34 @@ type DbTransitionRow = {
   id: string; request_id: string; stage: RequestStage;
   transitioned_at: string; transitioned_by: string | null;
 };
+type DbLegRow = {
+  id: string; request_id: string; seq: number; role_key: string; label: string;
+  user_id: string | null; status: RequestLeg['status'];
+  assigned_at: string; started_at: string | null; completed_at: string | null;
+  note: string | null;
+};
+
+function rowToLeg(row: DbLegRow, toUi: Map<string, string>): RequestLeg {
+  return {
+    id: row.id,
+    request_id: row.request_id,
+    seq: row.seq,
+    role_key: row.role_key,
+    label: row.label,
+    user_id: u2ui(toUi, row.user_id),
+    status: row.status,
+    assigned_at: row.assigned_at,
+    started_at: row.started_at ?? undefined,
+    completed_at: row.completed_at ?? undefined,
+    note: row.note ?? undefined,
+  };
+}
 
 function rowToRequest(
   row: DbRequestRow,
   transitionRows: DbTransitionRow[],
   toUi: Map<string, string>,
+  legRows: DbLegRow[] = [],
 ): Request {
   const sorted = [...transitionRows].sort(
     (a, b) => new Date(a.transitioned_at).getTime() - new Date(b.transitioned_at).getTime(),
@@ -115,6 +138,7 @@ function rowToRequest(
     created_at: row.created_at,
     updated_at: row.updated_at,
     transitions,
+    legs: [...legRows].sort((a, b) => a.seq - b.seq).map((l) => rowToLeg(l, toUi)),
   };
 }
 
@@ -148,21 +172,79 @@ function requestToRow(req: Request | Partial<Request>, toDb: Map<string, string>
 
 export async function fetchRequests(): Promise<Request[]> {
   const { toUi } = await userMaps();
-  const [{ data: reqRows, error: reqErr }, { data: trRows, error: trErr }] = await Promise.all([
+  const [
+    { data: reqRows, error: reqErr },
+    { data: trRows, error: trErr },
+    { data: legRows, error: legErr },
+  ] = await Promise.all([
     supabase.from('requests').select('*').order('created_at', { ascending: false }),
     supabase.from('stage_transitions').select('*'),
+    supabase.from('request_assignments').select('*'),
   ]);
   if (reqErr) throw reqErr;
   if (trErr) throw trErr;
+  if (legErr) throw legErr;
   const byRequest = new Map<string, DbTransitionRow[]>();
   ((trRows ?? []) as DbTransitionRow[]).forEach((t) => {
     const list = byRequest.get(t.request_id) ?? [];
     list.push(t);
     byRequest.set(t.request_id, list);
   });
+  const legsByRequest = new Map<string, DbLegRow[]>();
+  ((legRows ?? []) as DbLegRow[]).forEach((l) => {
+    const list = legsByRequest.get(l.request_id) ?? [];
+    list.push(l);
+    legsByRequest.set(l.request_id, list);
+  });
   return ((reqRows ?? []) as DbRequestRow[]).map((r) =>
-    rowToRequest(r, byRequest.get(r.id) ?? [], toUi),
+    rowToRequest(r, byRequest.get(r.id) ?? [], toUi, legsByRequest.get(r.id) ?? []),
   );
+}
+
+/** Re-read one request (fields, transitions, legs) fresh from the DB. */
+export async function fetchRequestById(id: string): Promise<Request | null> {
+  if (!isUuid(id)) return null;
+  const { toUi } = await userMaps();
+  const [
+    { data: reqRow, error: reqErr },
+    { data: trRows, error: trErr },
+    { data: legRows, error: legErr },
+  ] = await Promise.all([
+    supabase.from('requests').select('*').eq('id', id).maybeSingle(),
+    supabase.from('stage_transitions').select('*').eq('request_id', id),
+    supabase.from('request_assignments').select('*').eq('request_id', id),
+  ]);
+  if (reqErr) throw reqErr;
+  if (trErr) throw trErr;
+  if (legErr) throw legErr;
+  if (!reqRow) return null;
+  return rowToRequest(
+    reqRow as DbRequestRow,
+    (trRows ?? []) as DbTransitionRow[],
+    toUi,
+    (legRows ?? []) as DbLegRow[],
+  );
+}
+
+/**
+ * Mark the signed-in user's part of a request done (their leg in
+ * `request_assignments`). The DB function stops their clock, advances the
+ * request to the leg's done-stage, opens the next leg and notifies its owner.
+ * Leads/admins may pass a specific leg id to close someone else's part.
+ */
+export async function markLegDone(requestId: string, legId?: string, note?: string): Promise<void> {
+  const { error } = await supabase.rpc('mark_leg_done', {
+    p_request_id: requestId,
+    p_leg_id: legId ?? null,
+    p_note: note ?? null,
+  });
+  if (error) throw error;
+}
+
+/** Undo a mark-done (own leg, or any leg for leads/admins). */
+export async function reopenLeg(legId: string): Promise<void> {
+  const { error } = await supabase.rpc('reopen_leg', { p_leg_id: legId });
+  if (error) throw error;
 }
 
 /** Insert a new request plus its initial transition; returns the persisted Request. */

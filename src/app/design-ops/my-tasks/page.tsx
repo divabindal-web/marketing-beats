@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, AlertTriangle, CheckCircle2, ChevronRight, Inbox } from 'lucide-react';
 import { Request } from '@/types';
 import { fetchRequests, updateRequest } from '@/lib/requests-api';
-import { calculateActiveTAT } from '@/lib/tat';
+import { calculateActiveTAT, findMyLeg, getLegTAT } from '@/lib/tat';
 import { formatDate, getDaysUntilDue } from '@/lib/sample-data';
 import { useDirectory } from '@/lib/directory';
 import { useRequestsRealtime } from '@/lib/use-requests-realtime';
@@ -51,24 +51,42 @@ export default function MyTasksPage() {
   useEffect(() => { load(); }, [load]);
   useRequestsRealtime(load);
 
-  // "Mine" = owned (assigned_to) OR a point of contact (social/video/design).
+  // "Mine" = owned (assigned_to) OR a point of contact (social/video/design),
+  // OR you hold an open part of the workflow (e.g. the content brief a
+  // requestor still owes) — that part is your task even if you are not a POC.
   const mine = useMemo(
     () => (effectiveIds.length
-      ? requests.filter((r) => effectiveIds.some((id) =>
-          id === r.assigned_to || id === r.social_poc || id === r.video_poc || id === r.design_poc))
+      ? requests.filter((r) =>
+          effectiveIds.some((id) =>
+            id === r.assigned_to || id === r.social_poc || id === r.video_poc || id === r.design_poc)
+          || (r.legs ?? []).some((l) =>
+            !!l.user_id && effectiveIds.includes(l.user_id)
+            && (l.status === 'pending' || l.status === 'active')))
       : []),
     [requests, effectiveIds],
   );
 
   const today = new Date().toISOString().slice(0, 10);
 
+  /** The viewer's own part (leg) of a request, if they have one. */
+  const myLegOf = useCallback(
+    (r: Request) => findMyLeg(r.legs, effectiveIds),
+    [effectiveIds],
+  );
+
   /**
-   * Active working hours this request has already taken — nights, weekends and
-   * time parked waiting on a shoot, content or review feedback excluded.
+   * Working hours on YOUR clock: if you own a part of this request, only the
+   * time it has spent with you (leg started → marked done). A teammate
+   * sitting on their part no longer inflates your number. Requests without
+   * legs fall back to the whole-request active clock.
    */
   const workingHoursOf = useCallback(
-    (r: Request) => calculateActiveTAT(r.transitions ?? []),
-    [],
+    (r: Request) => {
+      const leg = myLegOf(r);
+      if (leg) return getLegTAT(leg) ?? 0;
+      return calculateActiveTAT(r.transitions ?? []);
+    },
+    [myLegOf],
   );
 
   // Longest-running first, so the top of the list is what has been sitting
@@ -179,9 +197,9 @@ export default function MyTasksPage() {
 
       {!loading && list.length > 0 && tab === 'upcoming' && (
         <p className="text-[11.5px] mb-2" style={{ color: 'var(--text-faint)' }}>
-          Longest-running first, by working hours actually spent. The clock pauses while a
-          request waits on content, a shoot or review feedback, so time you are not
-          responsible for does not count against you.
+          Longest-running first, by working hours on <em>your</em> clock — only the time a
+          request has spent with you counts. Open a task and mark your part done to stop
+          your clock and hand it to the next person.
         </p>
       )}
 
@@ -208,19 +226,44 @@ export default function MyTasksPage() {
                     {r.type}{r.entity ? ` · ${r.entity}` : ''} · from {r.requestor_name}
                   </div>
                 </div>
-                <span className={`gb-badge ${stagePill(r.current_stage, late)} flex-shrink-0`}>{r.current_stage}</span>
-                {/* Working hours this has already taken. A plain number, not
+                {(() => {
+                  // When your part is already done, say that instead of the
+                  // request's stage — the open stage is someone else's work.
+                  const leg = myLegOf(r);
+                  if (!done && leg?.status === 'done') {
+                    return (
+                      <span className="gb-badge gb-badge-green flex-shrink-0"
+                            title={`You finished your part (${leg.label}); the request is with the next person`}>
+                        Your part done
+                      </span>
+                    );
+                  }
+                  return <span className={`gb-badge ${stagePill(r.current_stage, late)} flex-shrink-0`}>{r.current_stage}</span>;
+                })()}
+                {/* Working hours on YOUR clock. A plain number, not
                     a bar against a target — the target was noise. */}
                 {(() => {
                   if (tab === 'completed') return <div className="flex-shrink-0" style={{ width: 70 }} />;
+                  const leg = myLegOf(r);
                   const hrs = workingHoursOf(r);
+                  const stopped = leg?.status === 'done';
+                  const waiting = leg?.status === 'pending';
                   return (
                     <div className="flex-shrink-0 text-right" style={{ width: 70 }}
-                         title="Working hours spent on this so far, pauses excluded">
-                      <div className="text-[12px] font-medium tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-                        {hrs < 1 ? '<1h' : `${hrs.toFixed(1)}h`}
+                         title={leg
+                           ? (stopped
+                             ? `Your part took ${hrs.toFixed(1)} working hours — your clock is stopped`
+                             : waiting
+                               ? 'The request has not reached your part yet — your clock has not started'
+                               : 'Working hours this has spent with you so far')
+                           : 'Working hours spent on this so far, pauses excluded'}>
+                      <div className="text-[12px] font-medium tabular-nums"
+                           style={{ color: stopped ? 'var(--success)' : 'var(--text-secondary)' }}>
+                        {waiting ? '—' : hrs < 1 ? '<1h' : `${hrs.toFixed(1)}h`}
                       </div>
-                      <div className="text-[10px]" style={{ color: 'var(--text-faint)' }}>working</div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-faint)' }}>
+                        {leg ? (stopped ? 'your part ✓' : waiting ? 'not yours yet' : 'your clock') : 'working'}
+                      </div>
                     </div>
                   );
                 })()}

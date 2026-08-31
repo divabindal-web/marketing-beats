@@ -36,6 +36,9 @@ export function useRequestsRealtime(onChange: () => void) {
       .channel(`requests-live-${channelSeq++}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, ping)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stage_transitions' }, ping)
+      // Per-stakeholder legs: someone marking their part done must reach every
+      // open dashboard, even when it doesn't move the request's stage.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'request_assignments' }, ping)
       .subscribe();
 
     return () => {

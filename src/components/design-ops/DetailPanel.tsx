@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { X, CheckCircle, Circle, ChevronRight, ExternalLink, Link2, Trash2 } from 'lucide-react';
-import { ENTITIES, Request, StageTransition, getTATCategoriesForType } from '@/types';
+import { X, CheckCircle, Circle, ChevronRight, ExternalLink, Link2, Trash2, Undo2 } from 'lucide-react';
+import { ENTITIES, Request, RequestLeg, StageTransition, getTATCategoriesForType } from '@/types';
 import { getStagesForType, isOverdue } from '@/lib/sample-data';
 import { DirectoryUser } from '@/lib/directory';
-import { getStageBreakdown, formatBusinessHours } from '@/lib/tat';
+import { getLegTAT, getStageBreakdown, formatBusinessHours } from '@/lib/tat';
+import { fetchRequestById, markLegDone, reopenLeg } from '@/lib/requests-api';
 import {
   Subtask,
   CommentRow,
@@ -22,6 +23,7 @@ import {
   currentDbUser,
   userTeamByEmail,
   deleteRequestById,
+  MeRow,
 } from '@/lib/work-api';
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
@@ -72,12 +74,22 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
 
   // Leads/admins: can delete requests and reassign people. Members: read-only on
   // assignment (their lead assigns work to them), no delete.
-  const [me, setMe] = useState<{ role: string; team: string | null; is_lead: boolean } | null>(null);
+  const [me, setMe] = useState<MeRow | null>(null);
   const [teamByEmail, setTeamByEmail] = useState<Map<string, string>>(new Map());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [stageError, setStageError] = useState('');
+
+  // Per-stakeholder legs. Kept in local state so a mark-done reflects
+  // immediately even before the realtime refetch reaches the parent page.
+  const [legs, setLegs] = useState<RequestLeg[]>(request.legs ?? []);
+  const [legBusy, setLegBusy] = useState<string | null>(null);
+  const [legError, setLegError] = useState('');
+  useEffect(() => {
+    setLegs(request.legs ?? []);
+    setLegError('');
+  }, [request.id, request.legs]);
 
   useEffect(() => {
     let cancelled = false;
@@ -315,6 +327,52 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
   const assignedUser = users.find((u) => u.id === request.assigned_to);
   const tatCategories = getTATCategoriesForType(request.type);
 
+  // The viewer, in both id spaces: legs carry the sample slug for bridged
+  // users and the DB uuid for everyone else (same space as request POCs).
+  const myUiId = me ? users.find((u) => u.db_id === me.id)?.id : undefined;
+  const myIds = [me?.id, myUiId].filter(Boolean) as string[];
+  const canActOnAnyLeg = !!me && (me.is_lead || me.role === 'admin');
+  const legOwnerName = (l: RequestLeg) =>
+    users.find((u) => u.id === l.user_id || u.db_id === l.user_id)?.name;
+
+  /** After a leg action the DB has moved (stage, next leg, clocks) — re-read
+   *  the request and hand the fresh copy to the parent so every view agrees. */
+  const refreshAfterLegAction = async () => {
+    const fresh = await fetchRequestById(request.id);
+    if (fresh) {
+      setLegs(fresh.legs ?? []);
+      onUpdate(fresh);
+    }
+  };
+
+  const handleMarkLegDone = async (leg: RequestLeg) => {
+    if (legBusy) return;
+    setLegBusy(leg.id);
+    setLegError('');
+    try {
+      await markLegDone(request.id, leg.id);
+      await refreshAfterLegAction();
+    } catch (e) {
+      setLegError((e as { message?: string })?.message ?? 'Could not mark this part done.');
+    } finally {
+      setLegBusy(null);
+    }
+  };
+
+  const handleReopenLeg = async (leg: RequestLeg) => {
+    if (legBusy) return;
+    setLegBusy(leg.id);
+    setLegError('');
+    try {
+      await reopenLeg(leg.id);
+      await refreshAfterLegAction();
+    } catch (e) {
+      setLegError((e as { message?: string })?.message ?? 'Could not reopen this part.');
+    } finally {
+      setLegBusy(null);
+    }
+  };
+
   const linkFields = [
     { key: 'youtube_link', label: 'YouTube', placeholder: 'https://youtube.com/watch?v=...' },
     { key: 'instagram_link', label: 'Instagram', placeholder: 'https://instagram.com/p/...' },
@@ -461,6 +519,95 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
           </div>
           {stageError && (
             <p className="text-[12px] -mt-2" style={{ color: 'var(--error)' }}>{stageError}</p>
+          )}
+
+          {/* Per-stakeholder parts. A request passes through several hands;
+              each person closes only their own part, and only the time the
+              request spent WITH them counts against them. */}
+          {isDbRequest && legs.length > 0 && (
+            <div>
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-faint)' }}>
+                Who has the ball
+              </h3>
+              <p className="text-[11px] mb-2" style={{ color: 'var(--text-faint)' }}>
+                Each person&apos;s clock runs only while the request is with them.
+                Finished your part? Mark it done — your time stops and the next person is notified.
+              </p>
+              <div className="rounded-md overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                {legs.map((leg, i) => {
+                  const isMine = !!leg.user_id && myIds.includes(leg.user_id);
+                  const open = leg.status === 'pending' || leg.status === 'active';
+                  const hours = getLegTAT(leg);
+                  const busy = legBusy === leg.id;
+                  return (
+                    <div
+                      key={leg.id}
+                      className="flex items-center gap-2.5 px-3 py-2 text-[12.5px]"
+                      style={{
+                        borderTop: i ? '1px solid var(--border-light)' : undefined,
+                        backgroundColor: leg.status === 'active' ? 'var(--bg-tertiary)' : undefined,
+                        opacity: leg.status === 'skipped' ? 0.55 : 1,
+                      }}
+                    >
+                      {leg.status === 'done' ? (
+                        <CheckCircle size={14} className="flex-shrink-0" style={{ color: 'var(--success)' }} />
+                      ) : (
+                        <Circle
+                          size={14}
+                          className="flex-shrink-0"
+                          style={{ color: leg.status === 'active' ? 'var(--accent)' : 'var(--text-faint)' }}
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                          {leg.label}
+                          {isMine && (
+                            <span className="ml-1.5 font-normal text-[11px]" style={{ color: 'var(--accent-text)' }}>
+                              (you)
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] truncate" style={{ color: 'var(--text-faint)' }}>
+                          {leg.status === 'skipped'
+                            ? 'No one assigned'
+                            : legOwnerName(leg) ?? 'Unassigned'}
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0 text-right text-[11.5px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                        {leg.status === 'done' && hours !== null && formatBusinessHours(hours)}
+                        {leg.status === 'active' && hours !== null && `${formatBusinessHours(hours)} so far`}
+                        {leg.status === 'pending' && 'waiting'}
+                        {leg.status === 'skipped' && '—'}
+                      </div>
+                      {open && (isMine || canActOnAnyLeg) && leg.status === 'active' && (
+                        <button
+                          onClick={() => handleMarkLegDone(leg)}
+                          disabled={busy}
+                          className="gb-btn flex-shrink-0"
+                          style={{ padding: '3px 10px', fontSize: '11.5px', backgroundColor: 'var(--success)', color: '#fff' }}
+                          title={isMine ? 'Mark your part of this request done' : `Close the ${leg.label} part`}
+                        >
+                          {busy ? 'Saving…' : isMine ? 'My part is done' : 'Mark done'}
+                        </button>
+                      )}
+                      {leg.status === 'done' && (isMine || canActOnAnyLeg) && (
+                        <button
+                          onClick={() => handleReopenLeg(leg)}
+                          disabled={busy}
+                          className="gb-icon-btn flex-shrink-0"
+                          title="Reopen this part (restarts its clock)"
+                        >
+                          <Undo2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {legError && (
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--error)' }}>{legError}</p>
+              )}
+            </div>
           )}
 
           {/* Stage-wise TAT Breakdown */}

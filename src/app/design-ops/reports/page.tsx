@@ -3,12 +3,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { listDbUsers, DbUserRow } from '@/lib/work-api';
-import { BUSINESS_HOURS, calculateActiveTAT, getStageBreakdown } from '@/lib/tat';
-import { RequestStage, RequestType, StageTransition, getTATCategoriesForType } from '@/types';
+import { BUSINESS_HOURS, calculateActiveTAT, getLegTAT, getStageBreakdown } from '@/lib/tat';
+import { RequestStage, RequestType, StageTransition } from '@/types';
 
 interface ReqRow {
   id: string; title: string; type: string; entity: string | null;
   assigned_to: string | null; current_stage: string;
+}
+
+/** One stakeholder's part of one request, straight from request_assignments
+ *  (DB uuid space throughout, same as listDbUsers). */
+interface LegRow {
+  request_id: string; seq: number; role_key: string; label: string;
+  user_id: string | null; status: string;
+  assigned_at: string; started_at: string | null; completed_at: string | null;
 }
 
 /** The three request types keep different stage sets, so the breakdown is
@@ -40,6 +48,7 @@ export default function ReportsPage() {
   const [type, setType] = useState<RequestType>('Video');
   const [requests, setRequests] = useState<ReqRow[]>([]);
   const [transitions, setTransitions] = useState<TransitionRow[]>([]);
+  const [legs, setLegs] = useState<LegRow[]>([]);
   const [users, setUsers] = useState<DbUserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -47,15 +56,19 @@ export default function ReportsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [reqRes, trRes, dbUsers] = await Promise.all([
+        const [reqRes, trRes, legRes, dbUsers] = await Promise.all([
           supabase.from('requests').select('id, title, type, entity, assigned_to, current_stage'),
           supabase.from('stage_transitions').select('request_id, stage, transitioned_at'),
+          supabase.from('request_assignments')
+            .select('request_id, seq, role_key, label, user_id, status, assigned_at, started_at, completed_at'),
           listDbUsers(),
         ]);
         if (reqRes.error) throw reqRes.error;
         if (trRes.error) throw trRes.error;
+        if (legRes.error) throw legRes.error;
         setRequests((reqRes.data as ReqRow[]) ?? []);
         setTransitions((trRes.data as TransitionRow[]) ?? []);
+        setLegs((legRes.data as LegRow[]) ?? []);
         setUsers(dbUsers);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
@@ -105,7 +118,7 @@ export default function ReportsPage() {
     return m;
   }, [users]);
 
-  /** One row of the report: a person or a team, with hours banked per stage. */
+  /** One row of the report: a person or a team, with hours banked per part. */
   interface Agg {
     key: string;
     name: string;
@@ -115,15 +128,8 @@ export default function ReportsPage() {
     role: string;
     count: number;
     totalTat: number;
-    perStage: Partial<Record<RequestStage, number>>;
+    perStage: Partial<Record<string, { hours: number; n: number }>>;
   }
-
-  const addStages = (into: Partial<Record<RequestStage, number>>, from: Partial<Record<RequestStage, number>>) => {
-    for (const [stage, hours] of Object.entries(from)) {
-      const k = stage as RequestStage;
-      into[k] = (into[k] ?? 0) + (hours ?? 0);
-    }
-  };
 
   // Only the selected type, so each column means one thing.
   const forType = useMemo(
@@ -131,10 +137,42 @@ export default function ReportsPage() {
     [completed, type],
   );
 
+  const typeOf = useMemo(() => {
+    const m = new Map<string, string>();
+    requests.forEach((r) => m.set(r.id, r.type));
+    return m;
+  }, [requests]);
+
+  /**
+   * The unit of credit is a PART, not a request. A request passes through
+   * several hands (brief → design/shoot/edit → upload); each finished leg is
+   * credited to its own owner, with only the hours the request spent with
+   * them — so one slow hand-off no longer lands on someone else's number.
+   * A part counts in the month its owner marked it done.
+   */
+  const doneParts = useMemo(
+    () => legs
+      .filter((l) =>
+        l.status === 'done'
+        && !!l.completed_at
+        && l.completed_at.slice(0, 7) === month
+        && typeOf.get(l.request_id) === type)
+      .map((l) => ({
+        ...l,
+        hours: getLegTAT({
+          status: 'done',
+          assigned_at: l.assigned_at,
+          started_at: l.started_at ?? undefined,
+          completed_at: l.completed_at ?? undefined,
+        }) ?? 0,
+      })),
+    [legs, month, type, typeOf],
+  );
+
   const perPerson = useMemo<Agg[]>(() => {
     const m = new Map<string, Agg>();
-    forType.forEach((c) => {
-      const u = c.request.assigned_to ? usersById.get(c.request.assigned_to) : undefined;
+    doneParts.forEach((p) => {
+      const u = p.user_id ? usersById.get(p.user_id) : undefined;
       const key = u?.id ?? 'unassigned';
       const cur = m.get(key) ?? {
         key,
@@ -145,38 +183,49 @@ export default function ReportsPage() {
         count: 0, totalTat: 0, perStage: {},
       };
       cur.count += 1;
-      cur.totalTat += c.tatHours;
-      addStages(cur.perStage, c.perStage);
+      cur.totalTat += p.hours;
+      const slot = cur.perStage[p.role_key] ?? { hours: 0, n: 0 };
+      slot.hours += p.hours;
+      slot.n += 1;
+      cur.perStage[p.role_key] = slot;
       m.set(key, cur);
     });
     return Array.from(m.values()).sort((a, b) => b.count - a.count);
-  }, [forType, usersById]);
+  }, [doneParts, usersById]);
 
   const perTeam = useMemo<Agg[]>(() => {
     const m = new Map<string, Agg>();
-    forType.forEach((c) => {
-      const u = c.request.assigned_to ? usersById.get(c.request.assigned_to) : undefined;
+    doneParts.forEach((p) => {
+      const u = p.user_id ? usersById.get(p.user_id) : undefined;
       const team = u?.team ?? 'Unassigned';
       const cur = m.get(team) ?? {
         key: team, name: team, team, designation: '—', role: '—',
         count: 0, totalTat: 0, perStage: {},
       };
       cur.count += 1;
-      cur.totalTat += c.tatHours;
-      addStages(cur.perStage, c.perStage);
+      cur.totalTat += p.hours;
+      const slot = cur.perStage[p.role_key] ?? { hours: 0, n: 0 };
+      slot.hours += p.hours;
+      slot.n += 1;
+      cur.perStage[p.role_key] = slot;
       m.set(team, cur);
     });
     return Array.from(m.values()).sort((a, b) => b.count - a.count);
-  }, [forType, usersById]);
+  }, [doneParts, usersById]);
 
-  /** The stages this type actually passes through, in workflow order, minus
-   *  the terminal one (which by definition has no duration). */
-  const stageCols = useMemo<{ stage: RequestStage; label: string }[]>(
-    () => getTATCategoriesForType(type)
-      .filter((c) => c.days > 0)
-      .map((c) => ({ stage: c.stage, label: c.description })),
-    [type],
-  );
+  /** The parts this type's workflow passes through, in hand-off order —
+   *  derived from the legs themselves so config changes show up untouched. */
+  const stageCols = useMemo<{ stage: string; label: string }[]>(() => {
+    const seen = new Map<string, { seq: number; label: string }>();
+    legs.forEach((l) => {
+      if (typeOf.get(l.request_id) !== type) return;
+      const cur = seen.get(l.role_key);
+      if (!cur || l.seq < cur.seq) seen.set(l.role_key, { seq: l.seq, label: l.label });
+    });
+    return Array.from(seen.entries())
+      .sort((a, b) => a[1].seq - b[1].seq)
+      .map(([role_key, v]) => ({ stage: role_key, label: v.label }));
+  }, [legs, typeOf, type]);
 
   const totalCompleted = forType.length;
   const avgTat = totalCompleted
@@ -184,25 +233,22 @@ export default function ReportsPage() {
     : '—';
   const activePeople = perPerson.filter((p) => p.key !== 'unassigned').length;
 
-  /** The single slowest stage across everything delivered this month — the
-   *  one worth doing something about. */
+  /** The single slowest part of the workflow this month — the hand-off worth
+   *  doing something about. */
   const slowestStage = useMemo(() => {
-    const tally: Partial<Record<RequestStage, { hours: number; n: number }>> = {};
-    forType.forEach((c) => {
-      for (const [stage, hours] of Object.entries(c.perStage)) {
-        const k = stage as RequestStage;
-        const cur = tally[k] ?? { hours: 0, n: 0 };
-        cur.hours += hours ?? 0;
-        cur.n += 1;
-        tally[k] = cur;
-      }
+    const tally: Partial<Record<string, { hours: number; n: number }>> = {};
+    doneParts.forEach((p) => {
+      const cur = tally[p.role_key] ?? { hours: 0, n: 0 };
+      cur.hours += p.hours;
+      cur.n += 1;
+      tally[p.role_key] = cur;
     });
     const ranked = stageCols
       .map((col) => ({ ...col, avg: tally[col.stage] ? tally[col.stage]!.hours / tally[col.stage]!.n : 0 }))
       .filter((r) => r.avg > 0)
       .sort((a, b) => b.avg - a.avg);
     return ranked[0] ?? null;
-  }, [forType, stageCols]);
+  }, [doneParts, stageCols]);
 
   const renderTable = (rows: Agg[], firstCol: string, showPerson: boolean) => (
     <div className="gb-card p-0 overflow-x-auto">
@@ -218,9 +264,11 @@ export default function ReportsPage() {
                 <th className="text-left py-2.5 px-3 font-semibold uppercase text-[10.5px] tracking-wide">Team</th>
               </>
             )}
-            <th className="text-right py-2.5 px-3 font-semibold uppercase text-[10.5px] tracking-wide">Done</th>
             <th className="text-right py-2.5 px-3 font-semibold uppercase text-[10.5px] tracking-wide"
-                style={{ borderRight: '1px solid var(--border)' }}>Total</th>
+                title="Parts of the workflow marked done this month">Parts</th>
+            <th className="text-right py-2.5 px-3 font-semibold uppercase text-[10.5px] tracking-wide"
+                style={{ borderRight: '1px solid var(--border)' }}
+                title="Average business hours per finished part">Avg</th>
             {stageCols.map((c) => (
               <th key={c.stage} className="text-right py-2.5 px-3 font-semibold uppercase text-[10.5px] tracking-wide"
                   title={c.stage}>
@@ -245,11 +293,11 @@ export default function ReportsPage() {
                 {(r.totalTat / r.count).toFixed(1)}
               </td>
               {stageCols.map((c) => {
-                const hrs = r.perStage[c.stage];
+                const slot = r.perStage[c.stage];
                 return (
                   <td key={c.stage} className="py-2.5 px-3 text-right tabular-nums"
-                      style={{ color: hrs ? 'var(--text-primary)' : 'var(--text-faint)' }}>
-                    {hrs ? (hrs / r.count).toFixed(1) : '—'}
+                      style={{ color: slot ? 'var(--text-primary)' : 'var(--text-faint)' }}>
+                    {slot ? (slot.hours / slot.n).toFixed(1) : '—'}
                   </td>
                 );
               })}
@@ -298,9 +346,9 @@ export default function ReportsPage() {
 
           <p className="text-[11.5px] mb-4" style={{ color: 'var(--text-faint)' }}>
             Every figure is active business hours ({BUSINESS_HOURS.startHour}:00–{BUSINESS_HOURS.endHour}:00, Mon–Fri).
-            Each stage is counted on its own, so the shoot, the edit and the review are
-            separate numbers rather than one lump — read across a row to see where a
-            {' '}{type.toLowerCase()} actually spends its time.
+            A {type.toLowerCase()} passes through several hands, and each person is credited only for
+            their own part — from the moment the work reached them to the moment they marked it done.
+            Time the request spent with someone else never lands on their number.
           </p>
 
           {/* Stat strip */}
@@ -308,7 +356,7 @@ export default function ReportsPage() {
             {[
               { label: `${type} completed`, value: String(totalCompleted) },
               { label: 'Avg total (bus. hrs)', value: String(avgTat) },
-              { label: 'Slowest stage',
+              { label: 'Slowest part',
                 value: slowestStage ? `${slowestStage.label} · ${slowestStage.avg.toFixed(1)}h` : '—' },
               { label: 'Active people', value: String(activePeople) },
             ].map((s) => (
@@ -323,9 +371,9 @@ export default function ReportsPage() {
             ))}
           </div>
 
-          {totalCompleted === 0 ? (
+          {doneParts.length === 0 ? (
             <div className="gb-card p-8 text-center" style={{ color: 'var(--text-faint)' }}>
-              No completed work in this month yet.
+              No parts marked done in this month yet.
             </div>
           ) : (
             <>

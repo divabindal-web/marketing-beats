@@ -19,7 +19,7 @@
  * `"2026-03-14T11:45:00+05:30"`). Do not store date-only strings here.
  */
 
-import { Request, RequestType, RequestStage, StageTransition } from '@/types';
+import { Request, RequestType, RequestStage, RequestLeg, StageTransition } from '@/types';
 
 // ─── Business-hours constants ────────────────────────────────────────────────
 
@@ -302,6 +302,39 @@ export function calculateActiveTAT(
   }
 
   return Math.round(total * 100) / 100;
+}
+
+/**
+ * One person's TAT on a request: business hours from when the work reached
+ * them (their leg went active) to when they marked their part done — or to
+ * `asOf` while it is still with them. The rest of the request's lifetime is
+ * other people's time and is NOT charged to this leg.
+ *
+ * Returns null for legs that never held the clock (skipped, or not yet
+ * reached).
+ */
+export function getLegTAT(
+  leg: Pick<RequestLeg, 'status' | 'assigned_at' | 'started_at' | 'completed_at'>,
+  asOf: string = new Date().toISOString()
+): number | null {
+  if (leg.status === 'skipped') return null;
+  const start = leg.started_at ?? (leg.status === 'done' ? leg.assigned_at : null);
+  if (!start) return null; // pending: the work has not reached them yet
+  const end = leg.completed_at ?? asOf;
+  return businessHoursBetween(start, end);
+}
+
+/** The viewer's own leg on a request, given their id in either id space. */
+export function findMyLeg(
+  legs: RequestLeg[] | undefined,
+  myIds: string[]
+): RequestLeg | undefined {
+  if (!legs?.length || !myIds.length) return undefined;
+  const mine = legs
+    .filter((l) => l.user_id && myIds.includes(l.user_id) && l.status !== 'skipped')
+    .sort((a, b) => a.seq - b.seq);
+  // The open leg if there is one, otherwise the last finished one.
+  return mine.find((l) => l.status === 'pending' || l.status === 'active') ?? mine[mine.length - 1];
 }
 
 /**
