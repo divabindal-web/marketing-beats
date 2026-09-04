@@ -28,7 +28,7 @@ export interface User {
 export type RequestType = 'Video' | 'Social Media Graphics' | 'Graphics';
 export type RequestedBy = 'Social Team' | 'Management' | 'Sales Team' | 'Admin' | 'Tech' | 'HR' | 'SEO' | 'Paid Campaign' | 'Marketing' | 'Others';
 
-export type GraphicsStage = 'Assigned' | 'Content' | 'Design In Progress' | 'Design Done' | 'Ready to Upload' | 'Change Req' | 'Done';
+export type GraphicsStage = 'Assigned' | 'Content In Progress' | 'Design In Progress' | 'Design Done' | 'Ready to Upload' | 'Change Req' | 'Done';
 export type VideoStage = 'Assigned' | 'Planning' | 'Shooting Scheduled' | 'Shoot Done' | 'Editing In Progress' | 'Editing Done' | 'Ready to Upload' | 'Change Req' | 'Uploaded';
 
 export type RequestStage = GraphicsStage | VideoStage;
@@ -100,6 +100,8 @@ export interface RequestLeg {
   /** When this person marked their part done. */
   completed_at?: string;
   note?: string;
+  /** Business hours this leg is budgeted before it counts as SLA-breached. */
+  sla_hours?: number;
 }
 
 /**
@@ -224,7 +226,7 @@ export const REQUESTED_BY_OPTIONS: RequestedBy[] = [
 
 export const GRAPHICS_STAGES: GraphicsStage[] = [
   'Assigned',
-  'Content',
+  'Content In Progress',
   'Design In Progress',
   'Design Done',
   'Ready to Upload',
@@ -271,7 +273,7 @@ export interface StageTAT {
 
 export const GRAPHICS_TAT_CATEGORIES: StageTAT[] = [
   { stage: 'Assigned', days: 1, description: 'Assignment to team' },
-  { stage: 'Content', days: 2, description: 'Content preparation' },
+  { stage: 'Content In Progress', days: 2, description: 'Content preparation' },
   { stage: 'Design In Progress', days: 3, description: 'Design execution' },
   { stage: 'Design Done', days: 1, description: 'Design completion' },
   { stage: 'Ready to Upload', days: 1, description: 'Upload preparation' },
@@ -293,7 +295,7 @@ export const VIDEO_TAT_CATEGORIES: StageTAT[] = [
 
 export const SOCIAL_MEDIA_GRAPHICS_TAT_CATEGORIES: StageTAT[] = [
   { stage: 'Assigned', days: 1, description: 'Assignment to team' },
-  { stage: 'Content', days: 1, description: 'Content preparation' },
+  { stage: 'Content In Progress', days: 1, description: 'Content preparation' },
   { stage: 'Design In Progress', days: 2, description: 'Design execution' },
   { stage: 'Design Done', days: 1, description: 'Design completion' },
   { stage: 'Ready to Upload', days: 1, description: 'Upload preparation' },

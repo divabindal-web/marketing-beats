@@ -76,7 +76,7 @@ type DbLegRow = {
   id: string; request_id: string; seq: number; role_key: string; label: string;
   user_id: string | null; status: RequestLeg['status'];
   assigned_at: string; started_at: string | null; completed_at: string | null;
-  note: string | null;
+  note: string | null; sla_hours: number | null;
 };
 
 function rowToLeg(row: DbLegRow, toUi: Map<string, string>): RequestLeg {
@@ -92,6 +92,7 @@ function rowToLeg(row: DbLegRow, toUi: Map<string, string>): RequestLeg {
     started_at: row.started_at ?? undefined,
     completed_at: row.completed_at ?? undefined,
     note: row.note ?? undefined,
+    sla_hours: row.sla_hours ?? undefined,
   };
 }
 

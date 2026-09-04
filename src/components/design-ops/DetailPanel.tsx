@@ -1,25 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { X, CheckCircle, Circle, ChevronRight, ExternalLink, Link2, Trash2, Undo2 } from 'lucide-react';
-import { ENTITIES, Request, RequestLeg, StageTransition, getTATCategoriesForType } from '@/types';
+import { useEffect, useState } from 'react';
+import { X, CheckCircle, Circle, ChevronRight, ExternalLink, Link2, Trash2, Undo2, Pencil } from 'lucide-react';
+import { Request, RequestLeg, StageTransition, getTATCategoriesForType } from '@/types';
 import { getStagesForType, isOverdue } from '@/lib/sample-data';
 import { DirectoryUser } from '@/lib/directory';
-import { getLegTAT, getStageBreakdown, formatBusinessHours } from '@/lib/tat';
+import { getLegTAT, getStageBreakdown, formatBusinessHours, isLegSLABreached } from '@/lib/tat';
 import { fetchRequestById, markLegDone, reopenLeg } from '@/lib/requests-api';
+import { supabase } from '@/lib/supabase';
 import {
-  Subtask,
   CommentRow,
-  AttachmentRow,
-  listSubtasks,
-  addSubtask,
-  toggleSubtask,
-  deleteSubtask,
   listComments,
   addComment,
-  listAttachments,
-  uploadAttachment,
-  deleteAttachment,
   currentDbUser,
   userTeamByEmail,
   deleteRequestById,
@@ -27,12 +19,6 @@ import {
 } from '@/lib/work-api';
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
-
-function formatFileSize(bytes: number | null): string {
-  if (bytes === null || bytes === undefined) return '';
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
 
 function formatCommentDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
@@ -59,18 +45,11 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
 
   const isDbRequest = UUID_RE.test(request.id);
 
-  // Subtasks / attachments / comments (DB-backed, only for real uuid requests)
-  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  // Project summary (DB-backed "comments" table, only for real uuid requests)
   const [comments, setComments] = useState<CommentRow[]>([]);
-  const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
-  const [newSubtask, setNewSubtask] = useState('');
   const [newComment, setNewComment] = useState('');
-  const [uploading, setUploading] = useState(false);
   const [posting, setPosting] = useState(false);
-  const [subtaskError, setSubtaskError] = useState('');
   const [commentError, setCommentError] = useState('');
-  const [attachmentError, setAttachmentError] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Leads/admins: can delete requests and reassign people. Members: read-only on
   // assignment (their lead assigns work to them), no delete.
@@ -127,93 +106,22 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
   };
 
   useEffect(() => {
-    setSubtasks([]);
     setComments([]);
-    setAttachments([]);
-    setNewSubtask('');
     setNewComment('');
-    setSubtaskError('');
     setCommentError('');
-    setAttachmentError('');
     setConfirmDelete(false);
     setDeleteError('');
     if (!UUID_RE.test(request.id)) return;
     let cancelled = false;
-    listSubtasks(request.id)
-      .then((rows) => { if (!cancelled) setSubtasks(rows); })
-      .catch(() => { if (!cancelled) setSubtaskError('Could not load subtasks.'); });
     listComments(request.id)
       .then((rows) => { if (!cancelled) setComments(rows); })
-      .catch(() => { if (!cancelled) setCommentError('Could not load comments.'); });
-    listAttachments(request.id)
-      .then((rows) => { if (!cancelled) setAttachments(rows); })
-      .catch(() => { if (!cancelled) setAttachmentError('Could not load attachments.'); });
+      .catch(() => { if (!cancelled) setCommentError('Could not load the project summary.'); });
     return () => { cancelled = true; };
   }, [request.id]);
 
   if (!isOpen) {
     return null;
   }
-
-  const handleAddSubtask = async () => {
-    const title = newSubtask.trim();
-    if (!title) return;
-    setSubtaskError('');
-    try {
-      const row = await addSubtask(request.id, title);
-      setSubtasks((prev) => [...prev, row]);
-      setNewSubtask('');
-    } catch {
-      setSubtaskError('Could not add subtask.');
-    }
-  };
-
-  const handleToggleSubtask = async (s: Subtask) => {
-    setSubtaskError('');
-    setSubtasks((prev) => prev.map((r) => (r.id === s.id ? { ...r, done: !s.done } : r)));
-    try {
-      await toggleSubtask(s.id, !s.done);
-    } catch {
-      setSubtasks((prev) => prev.map((r) => (r.id === s.id ? { ...r, done: s.done } : r)));
-      setSubtaskError('Could not update subtask.');
-    }
-  };
-
-  const handleDeleteSubtask = async (s: Subtask) => {
-    setSubtaskError('');
-    try {
-      await deleteSubtask(s.id);
-      setSubtasks((prev) => prev.filter((r) => r.id !== s.id));
-    } catch {
-      setSubtaskError('Could not delete subtask.');
-    }
-  };
-
-  const handleUpload = async () => {
-    const file = fileInputRef.current?.files?.[0];
-    if (!file) return;
-    setAttachmentError('');
-    setUploading(true);
-    try {
-      await uploadAttachment(request.id, file);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      setAttachments(await listAttachments(request.id));
-    } catch {
-      setAttachmentError('Upload failed.');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleDeleteAttachment = async (row: AttachmentRow) => {
-    setAttachmentError('');
-    try {
-      await deleteAttachment(row);
-      setAttachments((prev) => prev.filter((r) => r.id !== row.id));
-    } catch {
-      setAttachmentError('Could not delete attachment.');
-    }
-  };
 
   const handleAddComment = async () => {
     const body = newComment.trim();
@@ -225,7 +133,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
       setNewComment('');
       setComments(await listComments(request.id));
     } catch {
-      setCommentError('Could not post comment.');
+      setCommentError('Could not post the project summary.');
     } finally {
       setPosting(false);
     }
@@ -368,6 +276,37 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
       await refreshAfterLegAction();
     } catch (e) {
       setLegError((e as { message?: string })?.message ?? 'Could not reopen this part.');
+    } finally {
+      setLegBusy(null);
+    }
+  };
+
+  // The clock starts automatically the moment a leg goes active — this only
+  // lets a lead/admin correct it (e.g. work actually started earlier/later
+  // than the system saw, or a stage was moved by mistake).
+  const [editingClockFor, setEditingClockFor] = useState<string | null>(null);
+  const [clockDraft, setClockDraft] = useState('');
+  const toLocalInputValue = (iso?: string) => (iso ? new Date(iso).toISOString().slice(0, 16) : '');
+  const handleStartEditClock = (leg: RequestLeg) => {
+    setEditingClockFor(leg.id);
+    setClockDraft(toLocalInputValue(leg.started_at));
+    setLegError('');
+  };
+  const handleSaveClock = async (leg: RequestLeg) => {
+    if (!clockDraft) { setEditingClockFor(null); return; }
+    setLegBusy(leg.id);
+    setLegError('');
+    try {
+      const iso = new Date(clockDraft).toISOString();
+      const { error } = await supabase
+        .from('request_assignments')
+        .update({ started_at: iso })
+        .eq('id', leg.id);
+      if (error) throw error;
+      setEditingClockFor(null);
+      await refreshAfterLegAction();
+    } catch (e) {
+      setLegError((e as { message?: string })?.message ?? 'Could not update the clock.');
     } finally {
       setLegBusy(null);
     }
@@ -530,7 +469,9 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                 Who has the ball
               </h3>
               <p className="text-[11px] mb-2" style={{ color: 'var(--text-faint)' }}>
-                Each person&apos;s clock runs only while the request is with them.
+                Each person&apos;s clock starts the moment the request reaches them and runs
+                only while it&apos;s with them — weekends don&apos;t count. Past the {' '}
+                {legs[0]?.sla_hours ?? 24}h budget, that part is flagged as SLA-breached.
                 Finished your part? Mark it done — your time stops and the next person is notified.
               </p>
               <div className="rounded-md overflow-hidden" style={{ border: '1px solid var(--border)' }}>
@@ -539,13 +480,17 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                   const open = leg.status === 'pending' || leg.status === 'active';
                   const hours = getLegTAT(leg);
                   const busy = legBusy === leg.id;
+                  const breached = isLegSLABreached(leg);
+                  const editingClock = editingClockFor === leg.id;
                   return (
                     <div
                       key={leg.id}
                       className="flex items-center gap-2.5 px-3 py-2 text-[12.5px]"
                       style={{
                         borderTop: i ? '1px solid var(--border-light)' : undefined,
-                        backgroundColor: leg.status === 'active' ? 'var(--bg-tertiary)' : undefined,
+                        backgroundColor: breached
+                          ? 'var(--error-bg)'
+                          : leg.status === 'active' ? 'var(--bg-tertiary)' : undefined,
                         opacity: leg.status === 'skipped' ? 0.55 : 1,
                       }}
                     >
@@ -566,19 +511,67 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                               (you)
                             </span>
                           )}
+                          {breached && (
+                            <span className="ml-1.5 gb-badge gb-badge-red" style={{ fontSize: '10px' }}>
+                              SLA raised
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] truncate" style={{ color: 'var(--text-faint)' }}>
                           {leg.status === 'skipped'
                             ? 'No one assigned'
                             : legOwnerName(leg) ?? 'Unassigned'}
                         </div>
+                        {editingClock ? (
+                          <div className="flex items-center gap-1 mt-1">
+                            <input
+                              type="datetime-local"
+                              value={clockDraft}
+                              onChange={(e) => setClockDraft(e.target.value)}
+                              className="input-base text-[11px] py-0.5 px-1"
+                            />
+                            <button
+                              onClick={() => handleSaveClock(leg)}
+                              disabled={busy}
+                              className="gb-btn gb-btn-secondary"
+                              style={{ padding: '2px 8px', fontSize: '11px' }}
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingClockFor(null)}
+                              className="gb-btn gb-btn-secondary"
+                              style={{ padding: '2px 8px', fontSize: '11px' }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          leg.started_at && (
+                            <div className="text-[10.5px] truncate" style={{ color: 'var(--text-faint)' }}>
+                              Started {new Date(leg.started_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                              {canActOnAnyLeg && (
+                                <button
+                                  onClick={() => handleStartEditClock(leg)}
+                                  className="ml-1 align-middle"
+                                  title="Edit when this leg's clock started"
+                                  style={{ color: 'var(--text-faint)' }}
+                                >
+                                  <Pencil size={9} style={{ display: 'inline' }} />
+                                </button>
+                              )}
+                            </div>
+                          )
+                        )}
                       </div>
-                      <div className="flex-shrink-0 text-right text-[11.5px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-                        {leg.status === 'done' && hours !== null && formatBusinessHours(hours)}
-                        {leg.status === 'active' && hours !== null && `${formatBusinessHours(hours)} so far`}
-                        {leg.status === 'pending' && 'waiting'}
-                        {leg.status === 'skipped' && '—'}
-                      </div>
+                      {!editingClock && (
+                        <div className="flex-shrink-0 text-right text-[11.5px] tabular-nums" style={{ color: breached ? 'var(--error)' : 'var(--text-secondary)' }}>
+                          {leg.status === 'done' && hours !== null && formatBusinessHours(hours)}
+                          {leg.status === 'active' && hours !== null && `${formatBusinessHours(hours)} so far`}
+                          {leg.status === 'pending' && 'waiting'}
+                          {leg.status === 'skipped' && '—'}
+                        </div>
+                      )}
                       {open && (isMine || canActOnAnyLeg) && leg.status === 'active' && (
                         <button
                           onClick={() => handleMarkLegDone(leg)}
@@ -664,7 +657,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                 </span>
               </div>
               <div className="flex justify-between">
-                <span style={{ color: 'var(--text-secondary)' }}>Need By:</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Assigned Date:</span>
                 <span
                   className="font-medium"
                   style={{
@@ -725,32 +718,6 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
               </p>
             )}
             <div className="space-y-2.5">
-              {/* Entity was previously set once at creation and never editable,
-                  so the rows created before it was persisted had no way back.
-                  It also decides which brand a finished video counts towards,
-                  so a blank one is worth flagging rather than hiding. */}
-              <div>
-                <label className="text-[11px] font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
-                  Entity
-                </label>
-                <select
-                  value={request.entity || ''}
-                  onChange={(e) => handleFieldChange('entity', e.target.value)}
-                  className="w-full input-base text-sm"
-                  style={!request.entity ? { borderColor: 'var(--warning)' } : undefined}
-                >
-                  <option value="">-- Not set --</option>
-                  {ENTITIES.map((en) => (
-                    <option key={en} value={en}>{en}</option>
-                  ))}
-                </select>
-                {!request.entity && (
-                  <p className="text-[11px] mt-1" style={{ color: 'var(--warning)' }}>
-                    Set this so the work counts towards the right brand.
-                  </p>
-                )}
-              </div>
-
               <div>
                 <label className="text-[11px] font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
                   Assigned To (Design)
@@ -762,7 +729,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                   disabled={!canAssign}
                 >
                   <option value="">-- Select --</option>
-                  {users.map((u) => (
+                  {pocOptions('Graphics & Video', request.assigned_to).map((u) => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
@@ -870,128 +837,11 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
             </div>
           )}
 
-          {/* Subtasks (DB-backed) */}
+          {/* Project Summary (DB-backed — was "Comments") */}
           {isDbRequest && (
             <div>
               <h3 className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-faint)' }}>
-                Subtasks
-                {subtasks.length > 0 && (
-                  <span className="ml-1 font-normal">
-                    ({subtasks.filter((s) => s.done).length}/{subtasks.length} done)
-                  </span>
-                )}
-              </h3>
-              <div className="space-y-1.5">
-                {subtasks.map((s) => (
-                  <div key={s.id} className="flex items-center gap-2 text-[13px] group">
-                    <input
-                      type="checkbox"
-                      checked={s.done}
-                      onChange={() => handleToggleSubtask(s)}
-                      className="flex-shrink-0 cursor-pointer"
-                    />
-                    <span
-                      className={`flex-1 min-w-0 truncate ${s.done ? 'line-through' : ''}`}
-                      style={{ color: s.done ? 'var(--text-muted)' : 'var(--text-primary)' }}
-                    >
-                      {s.title}
-                    </span>
-                    <button
-                      onClick={() => handleDeleteSubtask(s)}
-                      className="gb-icon-btn flex-shrink-0"
-                      title="Delete subtask"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-                <div className="flex items-center gap-1.5 pt-1">
-                  <input
-                    type="text"
-                    value={newSubtask}
-                    onChange={(e) => setNewSubtask(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddSubtask(); }}
-                    placeholder="Add a subtask..."
-                    className="flex-1 input-base text-sm"
-                  />
-                  <button
-                    onClick={handleAddSubtask}
-                    disabled={!newSubtask.trim()}
-                    className="gb-btn gb-btn-secondary flex-shrink-0"
-                  >
-                    Add
-                  </button>
-                </div>
-                {subtaskError && (
-                  <p className="text-[11px]" style={{ color: 'var(--error)' }}>{subtaskError}</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Attachments (DB-backed) */}
-          {isDbRequest && (
-            <div>
-              <h3 className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-faint)' }}>
-                Attachments
-              </h3>
-              <div className="space-y-1.5">
-                {attachments.map((a) => (
-                  <div key={a.id} className="flex items-center gap-2 text-[13px]">
-                    {a.url ? (
-                      <a
-                        href={a.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 min-w-0 truncate hover:underline"
-                        style={{ color: 'var(--link)' }}
-                      >
-                        {a.file_name}
-                      </a>
-                    ) : (
-                      <span className="flex-1 min-w-0 truncate" style={{ color: 'var(--text-primary)' }}>
-                        {a.file_name}
-                      </span>
-                    )}
-                    <span className="flex-shrink-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      {formatFileSize(a.size_bytes)}
-                    </span>
-                    <button
-                      onClick={() => handleDeleteAttachment(a)}
-                      className="gb-icon-btn flex-shrink-0"
-                      title="Delete attachment"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-                <div className="flex items-center gap-1.5 pt-1">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="flex-1 min-w-0 text-[12px]"
-                    style={{ color: 'var(--text-secondary)' }}
-                  />
-                  <button
-                    onClick={handleUpload}
-                    disabled={uploading}
-                    className="gb-btn gb-btn-secondary flex-shrink-0"
-                  >
-                    {uploading ? 'Uploading...' : 'Upload'}
-                  </button>
-                </div>
-                {attachmentError && (
-                  <p className="text-[11px]" style={{ color: 'var(--error)' }}>{attachmentError}</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Comments (DB-backed) */}
-          {isDbRequest && (
-            <div>
-              <h3 className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-faint)' }}>
-                Comments
+                Project Summary
               </h3>
               <div className="space-y-2.5">
                 {comments.map((c) => (
@@ -1016,7 +866,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                 <textarea
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Write a comment..."
+                  placeholder="Write the project summary..."
                   rows={3}
                   className="w-full input-base text-sm"
                 />
@@ -1025,7 +875,7 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
                   disabled={posting || !newComment.trim()}
                   className="gb-btn gb-btn-secondary"
                 >
-                  {posting ? 'Posting...' : 'Comment'}
+                  {posting ? 'Saving...' : 'Save'}
                 </button>
                 {commentError && (
                   <p className="text-[11px]" style={{ color: 'var(--error)' }}>{commentError}</p>

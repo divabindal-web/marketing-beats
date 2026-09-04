@@ -1154,7 +1154,7 @@ export function getStagesForType(type: RequestType): RequestStage[] {
     case 'Social Media Graphics':
     case 'Graphics':
       return [
-        'Assigned', 'Content', 'Design In Progress', 'Design Done',
+        'Assigned', 'Content In Progress', 'Design In Progress', 'Design Done',
         'Ready to Upload', 'Change Req', 'Done',
       ];
     default:

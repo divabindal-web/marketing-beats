@@ -311,7 +311,7 @@ function IndividualDashboard({
                   <th>Title</th>
                   <th>Type</th>
                   <th>Stage</th>
-                  <th>Need By</th>
+                  <th>Assigned Date</th>
                   <th style={{ textAlign: 'right' }}>TAT Used</th>
                   <th style={{ textAlign: 'right' }}>Working hrs</th>
                 </tr>
@@ -357,7 +357,7 @@ function IndividualDashboard({
                   <th>Title</th>
                   <th>Assigned to</th>
                   <th>Stage</th>
-                  <th>Need By</th>
+                  <th>Assigned Date</th>
                 </tr>
               </thead>
               <tbody>

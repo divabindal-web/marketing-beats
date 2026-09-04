@@ -50,7 +50,6 @@ export const DELIVERED_STAGE: Record<RequestType, RequestStage> = {
 // ─── Stages where the clock pauses (waiting on external input) ───────────────
 
 export const PAUSE_STAGES: readonly RequestStage[] = [
-  'Content',             // waiting on copy/content from requestor
   'Change Req',          // waiting on reviewer feedback
   'Shooting Scheduled',  // waiting for the scheduled shoot date
 ] as const;
@@ -59,6 +58,7 @@ export const PAUSE_STAGES: readonly RequestStage[] = [
 
 export const ACTIVE_STAGES: readonly RequestStage[] = [
   'Assigned',
+  'Content In Progress', // the social POC is actively writing the copy/brief
   'Planning',
   'Design In Progress',
   'Shoot Done',
@@ -322,6 +322,22 @@ export function getLegTAT(
   if (!start) return null; // pending: the work has not reached them yet
   const end = leg.completed_at ?? asOf;
   return businessHoursBetween(start, end);
+}
+
+/**
+ * Whether a leg has run past its own SLA budget (default 24 business hours,
+ * i.e. roughly one working day since a business day runs 10:00-19:00 Mon-Fri
+ * — weekends never count). Skipped/pending legs are never in breach.
+ */
+export function isLegSLABreached(
+  leg: Pick<RequestLeg, 'status' | 'assigned_at' | 'started_at' | 'completed_at' | 'sla_hours'>,
+  asOf: string = new Date().toISOString()
+): boolean {
+  if (leg.status === 'skipped' || leg.status === 'pending') return false;
+  const hours = getLegTAT(leg, asOf);
+  if (hours === null) return false;
+  const budget = leg.sla_hours ?? 24;
+  return hours > budget;
 }
 
 /** The viewer's own leg on a request, given their id in either id space. */

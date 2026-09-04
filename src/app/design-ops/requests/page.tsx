@@ -114,6 +114,21 @@ function AllRequestsPageInner() {
   }, []);
   const canManageReq = !!me && (me.is_lead || me.role === 'admin');
 
+  // Design work sits with Graphics & Video, so that's the only pool the
+  // "Assigned To" picker offers. An existing off-team value (from before this
+  // scoping, or a since-moved teammate) is kept in the list so it is never
+  // silently dropped.
+  const teamOf = (u?: { team: string | null; email?: string }) =>
+    u?.team ?? (u?.email ? teamByEmail.get(u.email.toLowerCase()) ?? null : null);
+  const assigneeOptions = (currentId?: string) => {
+    const list = directory.filter((u) => teamOf(u) === 'Graphics & Video');
+    if (currentId && !list.some((u) => u.id === currentId)) {
+      const cur = findInDirectory(directory, currentId);
+      if (cur) return [cur, ...list];
+    }
+    return list;
+  };
+
   // Mark-complete (moving to a final stage) is limited to the CMO or the lead of
   // the task's team (assignee's team). Mirrors the rule enforced in DetailPanel.
   const isFinalStage = (s: string) => s === 'Done' || s === 'Uploaded';
@@ -201,7 +216,7 @@ function AllRequestsPageInner() {
     'Ready to Upload': 'gb-badge-yellow', 'Design Done': 'gb-badge-yellow',
     'Editing Done': 'gb-badge-yellow', 'Shoot Done': 'gb-badge-yellow',
     'Design In Progress': 'gb-badge-blue', 'Editing In Progress': 'gb-badge-blue',
-    'Content': 'gb-badge-blue', 'Planning': 'gb-badge-blue',
+    'Content In Progress': 'gb-badge-blue', 'Planning': 'gb-badge-blue',
     'Shooting Scheduled': 'gb-badge-blue'
   };
 
@@ -285,6 +300,14 @@ function AllRequestsPageInner() {
     updateRequest(updated).catch((err) => alert('Could not save the change: ' + (err?.message ?? String(err))));
   };
 
+  /* ---- Quick inline reassignment on list view — no need to open the panel ---- */
+  const handleInlineAssigneeChange = (req: Request, newAssignee: string) => {
+    if (newAssignee === (req.assigned_to ?? '')) return;
+    const updated: Request = { ...req, assigned_to: newAssignee || undefined, updated_at: new Date().toISOString() };
+    setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    updateRequest(updated).catch((err) => alert('Could not save the change: ' + (err?.message ?? String(err))));
+  };
+
   const requestsByDate = useMemo(() => {
     const map: Record<string, Request[]> = {};
     filteredRequests.forEach(req => {
@@ -306,7 +329,7 @@ function AllRequestsPageInner() {
               <th>Stage</th>
               <th>Assigned To</th>
               <th onClick={() => handleSort('need_by')} style={{ cursor: 'pointer' }}>
-                Need By {sortField === 'need_by' && (sortAscending ? '↑' : '↓')}
+                Assigned Date {sortField === 'need_by' && (sortAscending ? '↑' : '↓')}
               </th>
               <th>TAT</th>
               {canManageReq && <th></th>}
@@ -344,7 +367,21 @@ function AllRequestsPageInner() {
                     </select>
                   </td>
                   <td style={{ color: 'var(--text-secondary)' }}>
-                    {assignee ? assignee.name : 'Unassigned'}
+                    {canManageReq ? (
+                      <select
+                        value={req.assigned_to || ''}
+                        onChange={(e) => handleInlineAssigneeChange(req, e.target.value)}
+                        className="input-base text-[11px] py-0.5 px-1.5"
+                        style={{ minWidth: '120px' }}
+                      >
+                        <option value="">-- Unassigned --</option>
+                        {assigneeOptions(req.assigned_to).map((u) => (
+                          <option key={u.id} value={u.id}>{u.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      assignee ? assignee.name : 'Unassigned'
+                    )}
                   </td>
                   <td style={{ fontWeight: 500, color: isRowOverdue ? 'var(--error)' : 'var(--text-secondary)' }}>
                     {formatDate(req.need_by)}

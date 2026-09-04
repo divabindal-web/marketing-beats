@@ -125,7 +125,7 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
       newErrors.title = 'Title is required';
     }
     if (!formData.needBy) {
-      newErrors.needBy = 'Need By date is required';
+      newErrors.needBy = 'Assigned Date is required';
     }
 
     setErrors(newErrors);
@@ -344,10 +344,10 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
               />
             </div>
 
-            {/* Need By */}
+            {/* Assigned Date (stored as need_by) */}
             <div>
               <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
-                Need By <span className="text-[var(--error)]">*</span>
+                Assigned Date <span className="text-[var(--error)]">*</span>
               </label>
               <input
                 type="date"
