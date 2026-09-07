@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { Search, Key, CheckCircle2, AlertCircle, Loader2, Shield } from 'lucide-react';
 import { useDirectory } from '@/lib/directory';
 import { resetMemberPassword } from '@/lib/work-api';
+import { usePasswordAdmin } from '@/lib/use-password-admin';
 
 export default function ResetPasswordsPage() {
   const [search, setSearch] = useState('');
@@ -12,6 +13,10 @@ export default function ResetPasswordsPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const users = useDirectory();
+  // Hiding the sidebar link is not enough — the URL is still typeable, and the
+  // edge function refuses anyone else anyway. Say so here instead of showing a
+  // form that can only fail.
+  const { allowed, loading: checking } = usePasswordAdmin();
 
   const filtered = useMemo(() => {
     if (!search.trim()) return users;
@@ -45,6 +50,25 @@ export default function ResetPasswordsPage() {
     }
   };
 
+  if (checking) return null;
+  if (!allowed) {
+    return (
+      <div className="gb-card p-6 flex items-start gap-3">
+        <Shield size={18} style={{ color: 'var(--text-faint)' }} />
+        <div>
+          <div className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Not available to you
+          </div>
+          <p className="text-[13px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+            Setting someone else&apos;s password is limited to Divya, Diva and Lalit.
+            You can change your own password from the user menu at the bottom of
+            the sidebar.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="gb-page-header">
@@ -53,7 +77,7 @@ export default function ResetPasswordsPage() {
           <h1 className="gb-page-title" style={{ marginBottom: 0 }}>Reset Passwords</h1>
         </div>
         <p className="gb-page-description">
-          Admin only. Search for a team member and reset their password. The user will need to use the new password on their next login.
+          Search for a team member and reset their password. The user will need to use the new password on their next login.
         </p>
       </div>
 

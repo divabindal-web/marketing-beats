@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DbUserRow, TEAMS, addDbUser, currentDbUser, deleteDbUser, listDbUsers, updateDbUser,
   signedInEmails, resetMemberPassword } from '@/lib/work-api';
+import { usePasswordAdmin } from '@/lib/use-password-admin';
 import { KeyRound, Search, Trash2, UserPlus, X } from 'lucide-react';
 
 type EditablePatch = Partial<Pick<DbUserRow, 'role' | 'team' | 'is_lead' | 'is_active' | 'designation'>>;
@@ -270,6 +271,10 @@ export default function UserManagementPage() {
   const [deleting, setDeleting] = useState(false);
   // A lead (non-admin) adds members into their own team
   const [myTeamLock, setMyTeamLock] = useState<string | null>(null);
+  // Setting other people's passwords is narrower than managing members: only
+  // Divya, Diva and Lalit hold users.can_manage_passwords. Every lead used to
+  // see these controls.
+  const { allowed: canManagePasswords } = usePasswordAdmin();
 
   useEffect(() => {
     currentDbUser()
@@ -447,6 +452,7 @@ export default function UserManagementPage() {
           password is typed here and posted straight to the edge function —
           it is not stored, logged, or sent anywhere else. */}
       {(() => {
+        if (!canManagePasswords) return null;
         const locked = users.filter(
           (u) => u.email && signedIn && !signedIn.has(u.email.toLowerCase()),
         );
@@ -670,6 +676,7 @@ export default function UserManagementPage() {
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
+                        {canManagePasswords && (
                         <button
                           className="gb-btn gb-btn-secondary"
                           style={{ padding: '4px 10px', fontSize: '12px' }}
@@ -680,6 +687,7 @@ export default function UserManagementPage() {
                           <KeyRound size={12} strokeWidth={1.75} />
                           {resetting === user.id ? 'Resetting…' : 'Reset password'}
                         </button>
+                        )}
                         <button
                           className="gb-icon-btn"
                           title={`Remove ${user.name}`}

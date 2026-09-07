@@ -30,12 +30,19 @@ import { useRole } from './RoleContext';
 import { useCurrentUser } from './CurrentUserContext';
 import { useViewAs, ViewAsTarget } from './ViewAsContext';
 import { getInitials, SAMPLE_USERS } from '@/lib/sample-data';
+import { usePasswordAdmin } from '@/lib/use-password-admin';
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ReactNode;
   badge?: number;
+  /**
+   * Who this link is for. Absent = everyone.
+   *   'manage'    — leads and admins (users.is_lead / role='admin')
+   *   'passwords' — only the people holding users.can_manage_passwords
+   */
+  needs?: 'manage' | 'passwords';
 }
 
 interface NavSection {
@@ -136,13 +143,16 @@ const navSections: NavSection[] = [
         label: 'User Management',
         href: '/user-management',
         icon: <Users size={16} strokeWidth={1.75} />,
+        needs: 'manage',
       },
       {
         // The page existed and worked, but nothing linked to it, so the one
         // place you could set a member's password by hand was unreachable.
+        // Only the three people holding users.can_manage_passwords see it.
         label: 'Reset Passwords',
         href: '/admin/reset-passwords',
         icon: <Key size={16} strokeWidth={1.75} />,
+        needs: 'passwords',
       },
     ],
   },
@@ -162,6 +172,7 @@ export default function Sidebar({ open = false, onNavigate }: SidebarProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showChangePwd, setShowChangePwd] = useState(false);
   const [canManage, setCanManage] = useState(false);
+  const { allowed: canManagePasswords } = usePasswordAdmin();
   const { target: viewAsTarget, setTarget: setViewAsTarget } = useViewAs();
   const [viewAsList, setViewAsList] = useState<ViewAsTarget[]>([]);
 
@@ -311,8 +322,21 @@ export default function Sidebar({ open = false, onNavigate }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
+        {/*
+          Permission is per item, not per section. This used to hide a section
+          titled 'Admin' — a title no section has carried for a long time — so
+          User Management and Reset Passwords were in fact showing to everyone.
+        */}
         {navSections
-          .filter((section) => section.title !== 'Admin' || canManage)
+          .map((section) => ({
+            ...section,
+            items: section.items.filter((item) =>
+              item.needs === 'manage' ? canManage
+              : item.needs === 'passwords' ? canManagePasswords
+              : true,
+            ),
+          }))
+          .filter((section) => section.items.length > 0)
           .map((section) => (
           <div key={section.title} className="mb-5">
             <h3 className="gb-nav-section-title">{section.title}</h3>
