@@ -15,6 +15,7 @@ import {
   getStagesForType,
 } from '@/lib/sample-data';
 import { findInDirectory, useDirectory } from '@/lib/directory';
+import { myLegIds, canAssignOnRequest } from '@/lib/leg-permissions';
 import {
   getDeliveryTAT,
   calculateActiveTAT,
@@ -98,7 +99,7 @@ function AllRequestsPageInner() {
   };
 
   // Per-row delete in the list — leads/admins only (RLS enforces server-side too)
-  const [me, setMe] = useState<{ role: string; team: string | null; is_lead: boolean } | null>(null);
+  const [me, setMe] = useState<{ id: string; role: string; team: string | null; is_lead: boolean } | null>(null);
   const [teamByEmail, setTeamByEmail] = useState<Map<string, string>>(new Map());
   const [pendingRowDelete, setPendingRowDelete] = useState<string | null>(null);
   const [rowDeleting, setRowDeleting] = useState(false);
@@ -113,6 +114,11 @@ function AllRequestsPageInner() {
     return () => { alive = false; };
   }, []);
   const canManageReq = !!me && (me.is_lead || me.role === 'admin');
+  // The person holding a part of a request — or who raised it — can hand it
+  // on, so the assignee picker opens for them too (delete stays with leads).
+  const myUiId = me ? directory.find((u) => u.db_id === me.id)?.id : undefined;
+  const myIds = myLegIds(me?.id, myUiId);
+  const canAssignReq = (req: Request) => canAssignOnRequest(req, myIds, canManageReq);
 
   // Design work sits with Graphics & Video, so that's the only pool the
   // "Assigned To" picker offers. An existing off-team value (from before this
@@ -367,7 +373,7 @@ function AllRequestsPageInner() {
                     </select>
                   </td>
                   <td style={{ color: 'var(--text-secondary)' }}>
-                    {canManageReq ? (
+                    {canAssignReq(req) ? (
                       <select
                         value={req.assigned_to || ''}
                         onChange={(e) => handleInlineAssigneeChange(req, e.target.value)}

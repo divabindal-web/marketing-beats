@@ -51,6 +51,18 @@ export default function RequestModal({ isOpen, onClose, onSave }: RequestModalPr
           setShowAssign(true);
           setAssignLabel('Assign to team member');
           setLeads((data as LeadOption[]) ?? []);
+        } else if (me && me.role === 'admin' && me.is_lead) {
+          // An admin who also runs a team (Lalit) works both ways: they route
+          // to other leads *and* straight to their own people, so they get the
+          // whole active roster rather than the leads-only list.
+          const { data } = await supabase
+            .from('users')
+            .select('id, name, team')
+            .eq('is_active', true)
+            .order('name');
+          setShowAssign(true);
+          setAssignLabel('Assign to');
+          setLeads((data as LeadOption[]) ?? []);
         } else {
           const { data } = await supabase
             .from('users')

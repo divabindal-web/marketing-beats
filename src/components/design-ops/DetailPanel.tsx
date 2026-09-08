@@ -7,6 +7,7 @@ import { getStagesForType, isOverdue } from '@/lib/sample-data';
 import { DirectoryUser } from '@/lib/directory';
 import { getLegTAT, getStageBreakdown, formatBusinessHours, isLegSLABreached } from '@/lib/tat';
 import { fetchRequestById, markLegDone, reopenLeg } from '@/lib/requests-api';
+import { myLegIds, canAssignOnRequest } from '@/lib/leg-permissions';
 import { supabase } from '@/lib/supabase';
 import {
   CommentRow,
@@ -87,7 +88,6 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
     u?.team ?? (u?.email ? teamByEmail.get(u.email.toLowerCase()) ?? null : null);
 
   const canDelete = !!me && (me.is_lead || me.role === 'admin');
-  const canAssign = canDelete;
 
   const handleDeleteRequest = async () => {
     if (deleting) return;
@@ -238,8 +238,13 @@ export default function DetailPanel({ request, users, isOpen, onClose, onUpdate,
   // The viewer, in both id spaces: legs carry the sample slug for bridged
   // users and the DB uuid for everyone else (same space as request POCs).
   const myUiId = me ? users.find((u) => u.db_id === me.id)?.id : undefined;
-  const myIds = [me?.id, myUiId].filter(Boolean) as string[];
+  const myIds = myLegIds(me?.id, myUiId);
   const canActOnAnyLeg = !!me && (me.is_lead || me.role === 'admin');
+  // Whoever holds a part of this request — or raised it — may hand it to the
+  // next person: the content writer names the designer herself instead of
+  // waiting on a lead. Scoped to this request only; delete and mark-complete
+  // stay with leads and the CMO.
+  const canAssign = canAssignOnRequest({ legs, requestor_id: request.requestor_id }, myIds, canDelete);
   const legOwnerName = (l: RequestLeg) =>
     users.find((u) => u.id === l.user_id || u.db_id === l.user_id)?.name;
 

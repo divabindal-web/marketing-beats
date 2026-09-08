@@ -38,14 +38,20 @@ tool in active pilot (~30 real users)** — no room for error, no fake data, no
 
 ## Role model (enforced in UI + RLS — keep both in sync)
 
-- Divya (role='admin'): assigns new requests to the 4 team leads; sees
-  everything; manager dashboard by default; full User Management.
+- role='admin' (Divya, Diva, and Lalit since 8 Sep 2026): sees everything;
+  manager dashboard by default; full User Management across every team.
+  Divya assigns new requests to the 4 team leads. An admin who is *also* a
+  lead (Lalit) gets the whole active roster in New Request, not leads-only.
 - Leads (is_lead=true): Lalit (Graphics & Video), Shivam (SEO), Param (Paid),
   Parth (Social). Assign only within their own team; manager view scoped to
   their team; can delete requests (RLS DELETE policy checks is_lead/admin);
   add members locked to their own team.
-- Members: individual dashboard + My Tasks only; cannot assign (no assign
-  field in New Request; Assignment section read-only); no delete anywhere.
+- Members: individual dashboard + My Tasks only; no delete anywhere; no assign
+  field in New Request. They CAN name the next POC on a request they raised or
+  hold a leg on — see `src/lib/leg-permissions.ts` (`canAssignOnRequest`), used
+  by DetailPanel's Assignment block and the All Requests inline assignee cell.
+  This is how a content writer hands her finished copy to a designer without
+  waiting on a lead. Mark-complete and delete stay with leads/admins.
 - Makers' word is final — there is NO approval workflow, by design.
 - TEAMS list lives in `src/lib/work-api.ts` (also: Azuro Marketing, Branding,
   Content, Research).
